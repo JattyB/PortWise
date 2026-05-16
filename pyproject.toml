@@ -1,5 +1,7 @@
 [build-system]
-requires = ["setuptools>=68"]
+requires = [
+  "setuptools>=68",
+]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -8,26 +10,36 @@ version = "0.1.0"
 description = "Safe, evidence-first VAPT intelligence and reporting toolkit."
 readme = "README.md"
 requires-python = ">=3.11"
-license = {text = "MIT"}
-authors = [{name = "PortWise Contributors"}]
+license = { text = "MIT" }
+authors = [
+  { name = "PortWise Contributors" },
+]
 dependencies = [
   "PyYAML>=6.0",
   "openpyxl>=3.1",
-  "requests>=2.31"
+  "requests>=2.31",
 ]
 
 [project.optional-dependencies]
 dev = [
-  "pytest>=8.0"
+  "pytest>=8.0",
 ]
 
 [project.scripts]
 portwise = "portwise.cli:main"
 
 [tool.setuptools.packages.find]
-where = ["."]
-include = ["portwise*"]
+where = [
+  ".",
+]
+include = [
+  "portwise*",
+]
 
 [tool.pytest.ini_options]
-testpaths = ["tests"]
-pythonpath = ["."]
+testpaths = [
+  "tests",
+]
+pythonpath = [
+  ".",
+]

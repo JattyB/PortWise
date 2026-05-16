@@ -1,25 +1,38 @@
+# Python bytecode and test/tool caches
 __pycache__/
 *.py[cod]
-*.egg-info/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
+
+# Virtual environments
 .venv/
 venv/
-.portwise_cache/
-cache/
-dist/
+
+# Build and packaging output
 build/
-*.log
-*.tmp
+dist/
+*.egg-info/
+portwise.egg-info/
+
+# PortWise runtime output
 runs/
 reports/
 scans/
 evidence/
 logs/
-portwise.egg-info/
+cache/
+.portwise_cache/
+
+# Logs and temporary files
+*.log
+*.tmp
+
+# Nmap output generated during assessments
 *.gnmap
 *.nmap
 *.xml
-!.gitkeep
+
+# Keep publishable documentation-safe XML examples
 !examples/*.xml
+!.gitkeep

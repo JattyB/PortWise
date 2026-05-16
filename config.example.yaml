@@ -1,9 +1,13 @@
+# PortWise example configuration.
+#
+# Defaults are intentionally safe and read-only. Increase validation scope only
+# when you have explicit authorization and a documented assessment plan.
+
 project:
   name: PortWise Assessment
   context: unknown
   authorized_use_only: true
 
-# Safe defaults. Increase validation_level only in future controlled modes.
 scanner:
   nmap_timeout_seconds: 1800
   timeout: 5
@@ -11,11 +15,18 @@ scanner:
   output_dir: scans
   validation_level: safe
   internet_facing: false
+
+  # TCP scan behavior. SYN scans fall back to TCP connect scans when the local
+  # user does not have the privileges required by Nmap.
   tcp_syn_scan_when_privileged: true
   tcp_top_ports: 1000
   tcp_full_scan: true
+
+  # UDP service detection is intentionally limited to confirmed open UDP ports
+  # unless this is explicitly enabled.
   udp_top_1000: true
   udp_service_detection_on_open_filtered: false
+
   tls_expiry_days: 30
   snmp_default_community_check: true
   ftp_anonymous_check: true
@@ -47,7 +58,10 @@ cve:
   nvd_api_key_env: PORTWISE_NVD_API_KEY
 
 reports:
-  formats: [json, excel, html]
+  formats:
+    - json
+    - excel
+    - html
 
 dns:
   recursion_check: true
@@ -56,7 +70,9 @@ dns:
 
 snmp:
   default_community_check: true
-  communities: [public, private]
+  communities:
+    - public
+    - private
   max_oids: 3
   timeout_seconds: 3
 
@@ -113,7 +129,8 @@ profiles:
       cve_enrichment: false
       confidence_scoring: true
       false_positive_scoring: true
-    reports: [json]
+    reports:
+      - json
 
   internal-vapt:
     description: Internal authorized review with moderate exposure severity defaults.
@@ -142,7 +159,8 @@ profiles:
       cve_enrichment: false
       confidence_scoring: true
       false_positive_scoring: true
-    reports: [json]
+    reports:
+      - json
 
   external-vapt:
     description: External perimeter review with higher exposure severity defaults.
@@ -171,7 +189,8 @@ profiles:
       cve_enrichment: false
       confidence_scoring: true
       false_positive_scoring: true
-    reports: [json]
+    reports:
+      - json
 
   full-vapt:
     description: Full safe VAPT discovery, fingerprinting, native validation, and JSON reporting.
@@ -209,7 +228,8 @@ profiles:
       cve_enrichment: true
       confidence_scoring: true
       false_positive_scoring: true
-    reports: [json]
+    reports:
+      - json
 
   offline-analysis:
     description: Parse existing Nmap XML and produce normalized findings without active scanning.
@@ -223,4 +243,5 @@ profiles:
       cve_enrichment: false
       confidence_scoring: true
       false_positive_scoring: true
-    reports: [json]
+    reports:
+      - json

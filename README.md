@@ -1,12 +1,17 @@
 # PortWise
 
-Safe, evidence-first VAPT intelligence and reporting for authorized security audits.
+Safe, evidence-first VAPT intelligence and reporting for authorized security
+audits.
 
-PortWise turns Nmap evidence into structured service intelligence, runs conservative read-only validation modules, applies confidence and false-positive logic, optionally enriches components with CVE context, and generates JSON, HTML, and Excel reports suitable for auditor review.
+PortWise turns Nmap evidence into structured service intelligence, runs
+conservative read-only validation modules, applies confidence and
+false-positive logic, optionally enriches components with CVE context, and
+generates JSON, HTML, and Excel reports suitable for auditor review.
 
 ## What It Is
 
-PortWise is a Python 3.11+ assessment assistant for authorized VAPT and security configuration review. It is designed to help an assessor answer:
+PortWise is a Python 3.11+ assessment assistant for authorized VAPT and
+security configuration review. It is designed to help an assessor answer:
 
 - What assets and services were discovered?
 - Which services need owner validation?
@@ -16,13 +21,19 @@ PortWise is a Python 3.11+ assessment assistant for authorized VAPT and security
 
 ## What It Is Not
 
-PortWise is not an exploit framework, brute-force tool, RCE runner, password spraying tool, destructive scanner, fuzzing suite, or data dumping utility. It does not submit credentials, test default passwords, write to services, enumerate sensitive database contents, or run denial-of-service checks.
+PortWise is not an exploit framework, brute-force tool, RCE runner, password
+spraying tool, destructive scanner, fuzzing suite, or data dumping utility. It
+does not submit credentials, test default passwords, write to services,
+enumerate sensitive database contents, or run denial-of-service checks.
 
 Use PortWise only against systems where you have explicit authorization.
 
 ## Why It Exists
 
-VAPT reporting often fails when raw scan output is treated as truth. PortWise keeps the evidence chain visible: service fingerprint, safe validation result, confidence level, false-positive risk, recommendation, and manual-validation status.
+VAPT reporting often fails when raw scan output is treated as truth. PortWise
+keeps the evidence chain visible: service fingerprint, safe validation result,
+confidence level, false-positive risk, recommendation, and manual-validation
+status.
 
 ## Workflow
 
@@ -107,16 +118,16 @@ portwise retest --previous runs\old.json --current runs\latest.json --format all
 ## Module Coverage
 
 | Module | Status | Safe behavior |
-|---|---|---|
+| --- | --- | --- |
 | Exposure | Implemented | Context-aware service exposure findings |
-| HTTP | Implemented | GET/HEAD/OPTIONS, headers, cookies, safe paths, no auth/POST/fuzzing |
-| TLS | Implemented | Native Python TLS/cert/protocol/HSTS checks |
+| HTTP | Implemented | GET/HEAD/OPTIONS, headers, cookies, safe paths; no auth, POST, or fuzzing |
+| TLS | Implemented | Native Python TLS, certificate, protocol, and HSTS checks |
 | SMB | Basic | Exposure and safe Nmap script evidence parsing |
 | SSH | Basic | Exposure and version disclosure only |
-| RDP/WinRM | Basic | Exposure and Nmap evidence only, no login attempts |
+| RDP/WinRM | Basic | Exposure and Nmap evidence only; no login attempts |
 | FTP | Basic | Cleartext exposure and anonymous login check only |
 | DNS | Conservative | Exposure, recursion, CHAOS version, configured-zone AXFR only |
-| SNMP | Conservative | public/private minimal sysDescr check only |
+| SNMP | Conservative | `public`/`private` minimal sysDescr-style check only |
 | NTP | Conservative | Basic NTP time response only |
 | Database | Conservative | Minimal Redis/Memcached/HTTP metadata probes; no data dumping |
 | DevOps/Admin | Conservative | Landing/status fingerprinting; no forms or credentials |
@@ -126,13 +137,16 @@ portwise retest --previous runs\old.json --current runs\latest.json --format all
 
 ## CVE Enrichment
 
-Optional enrichment supports NVD, CISA KEV, and FIRST EPSS with caching. Set `PORTWISE_NVD_API_KEY` for higher NVD limits. Provider failures, no internet, and rate limits are recorded as skipped notes and do not fail scans.
+Optional enrichment supports NVD, CISA KEV, and FIRST EPSS with caching. Set
+`PORTWISE_NVD_API_KEY` for higher NVD limits. Provider failures, no internet,
+and rate limits are recorded as skipped notes and do not fail scans.
 
 CVE confidence is intentionally conservative:
 
 - exact CPE match: `Likely`
 - product/version keyword match: `Possible`
-- OpenSSH, Apache, nginx, OpenSSL, PHP, Linux distro packages, and Samba: backport warning and manual validation
+- OpenSSH, Apache, nginx, OpenSSL, PHP, Linux distro packages, and Samba:
+  backport warning and manual validation
 - no CVE is marked `Confirmed` without safe validation
 
 ## Confidence And False Positives
@@ -145,7 +159,9 @@ Evidence strength:
 - `2`: banner/header only
 - `1`: heuristic
 
-PortWise downgrades banner-only findings, guessed services, UDP `open|filtered`, contextual HSTS findings, and backport-sensitive version matches.
+PortWise downgrades banner-only findings, guessed services, UDP
+`open|filtered`, contextual HSTS findings, and backport-sensitive version
+matches.
 
 ## Reports
 
@@ -157,7 +173,9 @@ Generated under `reports/`:
 - `PortWise_Retest.json`
 - `PortWise_Retest.xlsx`
 
-The Excel workbook includes 17 sheets: executive summary, inventory, ports, service view, findings queues, TLS/HTTP/exposure/CVE views, module targets, commands, skipped checks, and retest baseline.
+The Excel workbook includes 17 sheets: executive summary, inventory, ports,
+service view, findings queues, TLS/HTTP/exposure/CVE views, module targets,
+commands, skipped checks, and retest baseline.
 
 ## Imports
 
@@ -170,7 +188,8 @@ Imported issues are not treated as PortWise-confirmed unless later validated by 
 
 ## Sample Artifacts
 
-Documentation-safe examples use `192.0.2.0/24`, `198.51.100.0/24`, `203.0.113.0/24`, and `example.com`.
+Documentation-safe examples use `192.0.2.0/24`, `198.51.100.0/24`,
+`203.0.113.0/24`, and `example.com`.
 
 - [sample_nmap.xml](examples/sample_nmap.xml)
 - [sample_run.json](examples/sample_run.json)
@@ -194,7 +213,7 @@ Screenshots can be added under `docs/screenshots/` before a formal release.
 
 - Richer authenticated proof modes with explicit opt-in.
 - More importers and normalized evidence mapping.
-- CI workflow, type checking, linting, and release packaging.
+- Type checking, linting, and release packaging.
 - Screenshot-backed reporting examples.
 - More protocol-specific parsers for existing Nmap NSE output.
 
