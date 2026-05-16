@@ -58,6 +58,7 @@ class NmapRunner:
         self.timeout_seconds = timeout_seconds
         self.scans_dir = ensure_dir(workspace / "scans")
         self.logs_dir = ensure_dir(workspace / "logs")
+        self.command_logs_dir = ensure_dir(self.logs_dir / "commands")
 
     @staticmethod
     def nmap_available() -> bool:
@@ -100,8 +101,8 @@ class NmapRunner:
         command, warning = self.build_command(step, targets_file, live_hosts_file, open_tcp_ports, open_udp_ports)
         result = CommandResult(name=step, command=command, started_at=utc_now(), dry_run=dry_run, warning=warning)
 
-        stdout_path = self.logs_dir / f"{step}.stdout.log"
-        stderr_path = self.logs_dir / f"{step}.stderr.log"
+        stdout_path = self.command_logs_dir / f"{step}.stdout.log"
+        stderr_path = self.command_logs_dir / f"{step}.stderr.log"
         result.stdout_path = str(stdout_path)
         result.stderr_path = str(stderr_path)
 
@@ -129,7 +130,7 @@ class NmapRunner:
             stderr_path.write_text(completed.stderr, encoding="utf-8", errors="replace")
             result.return_code = completed.returncode
             if completed.returncode != 0:
-                result.error = f"nmap exited with return code {completed.returncode}."
+                result.error = _format_command_error(f"nmap exited with return code {completed.returncode}.", completed.stderr)
         except subprocess.TimeoutExpired as exc:
             stdout_path.write_text(exc.stdout or "", encoding="utf-8", errors="replace")
             stderr_path.write_text(exc.stderr or "", encoding="utf-8", errors="replace")
@@ -171,8 +172,8 @@ class NmapRunner:
 
     def run_command(self, name: str, command: list[str], dry_run: bool = True) -> CommandResult:
         result = CommandResult(name=name, command=command, started_at=utc_now(), dry_run=dry_run)
-        stdout_path = self.logs_dir / f"{name}.stdout.log"
-        stderr_path = self.logs_dir / f"{name}.stderr.log"
+        stdout_path = self.command_logs_dir / f"{name}.stdout.log"
+        stderr_path = self.command_logs_dir / f"{name}.stderr.log"
         result.stdout_path = str(stdout_path)
         result.stderr_path = str(stderr_path)
 
@@ -200,7 +201,7 @@ class NmapRunner:
             stderr_path.write_text(completed.stderr, encoding="utf-8", errors="replace")
             result.return_code = completed.returncode
             if completed.returncode != 0:
-                result.error = f"nmap exited with return code {completed.returncode}."
+                result.error = _format_command_error(f"nmap exited with return code {completed.returncode}.", completed.stderr)
         except subprocess.TimeoutExpired as exc:
             stdout_path.write_text(exc.stdout or "", encoding="utf-8", errors="replace")
             stderr_path.write_text(exc.stderr or "", encoding="utf-8", errors="replace")
@@ -210,3 +211,9 @@ class NmapRunner:
         finally:
             result.finished_at = utc_now()
         return result
+
+
+def _format_command_error(message: str, stderr: str) -> str:
+    lines = [line for line in stderr.splitlines() if line.strip()]
+    tail = "\n".join(lines[-10:])
+    return f"{message}\nLast stderr lines:\n{tail}" if tail else message

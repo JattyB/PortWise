@@ -107,6 +107,31 @@ Retest:
 portwise retest --previous runs\old.json --current runs\latest.json --format all
 ```
 
+## Progress And Status
+
+PortWise writes scan progress continuously to:
+
+```text
+runs/progress.json
+```
+
+During `scan`, the CLI shows phase, grouped service-detection, module, and CVE
+status. Nmap does not always expose reliable percentage completion for every
+scan type, so PortWise reports the current phase, command, group count, module
+target count, elapsed time, and skip/failure reasons.
+
+Check status while a scan is running, or after it completes:
+
+```powershell
+portwise status --workspace .
+```
+
+Disable live progress output when you want machine-readable command summaries:
+
+```powershell
+portwise scan --targets targets.txt --profile full-vapt --config config.yaml --dry-run --no-progress
+```
+
 ## Profiles
 
 - `quick-triage`: fast discovery and basic routing.

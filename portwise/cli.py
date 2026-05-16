@@ -8,6 +8,7 @@ from pathlib import Path
 from portwise import __version__
 from portwise.core.config import ConfigError, load_config
 from portwise.core.logging import configure_logging
+from portwise.core.progress import PHASE_DONE, PHASE_FAILED, PHASE_RUNNING, ProgressTracker, default_scan_phases, load_progress, update_progress_file_phase
 from portwise.core.runner import analyze_assets, build_run_state_from_assets, run_scan
 from portwise.core.routing import write_target_files
 from portwise.core.workspace import create_workspace
@@ -48,6 +49,7 @@ def build_parser() -> argparse.ArgumentParser:
     scan_cmd.add_argument("--timeout", type=int)
     scan_cmd.add_argument("--no-cve", action="store_true")
     scan_cmd.add_argument("--no-modules", action="store_true")
+    scan_cmd.add_argument("--no-progress", action="store_true", help="Disable live progress output and only print the JSON command summary.")
 
     analyze_cmd = sub.add_parser("analyze", help="Analyze existing Nmap XML.")
     analyze_cmd.add_argument("--nmap", required=True, type=Path)
@@ -69,6 +71,9 @@ def build_parser() -> argparse.ArgumentParser:
     retest_cmd.add_argument("--current", required=True, type=Path)
     retest_cmd.add_argument("--format", choices=["json", "excel", "all"], default="json")
     retest_cmd.add_argument("--output-dir", type=Path, default=Path("reports"))
+
+    status_cmd = sub.add_parser("status", help="Show current or last PortWise run progress.")
+    status_cmd.add_argument("--workspace", type=Path, default=Path("."))
 
     sub.add_parser("modules", help="List available safe modules.")
 
@@ -103,9 +108,31 @@ def main(argv: list[str] | None = None) -> int:
             config.scanner["internet_facing"] = args.internet_facing
             config.scanner["udp_service_detection_on_open_filtered"] = args.udp_open_filtered
             dry_run = not args.execute
-            run = run_scan(args.workspace, config, profile, args.targets, dry_run=dry_run, no_modules=args.no_modules, no_cve=args.no_cve, internet_facing=args.internet_facing)
+            progress = None
+            if not args.no_progress:
+                progress_config = config.raw.get("progress", {}) if isinstance(config.raw.get("progress"), dict) else {}
+                progress = ProgressTracker(
+                    workspace=args.workspace,
+                    profile=profile.name,
+                    phases=default_scan_phases(profile.nmap_steps),
+                    enabled=bool(progress_config.get("enabled", True)),
+                    show_current_command=bool(progress_config.get("show_current_command", True)),
+                )
+            run = run_scan(
+                args.workspace,
+                config,
+                profile,
+                args.targets,
+                dry_run=dry_run,
+                no_modules=args.no_modules,
+                no_cve=args.no_cve,
+                internet_facing=args.internet_facing,
+                progress=progress,
+            )
+            if progress:
+                progress.skip_phase("Report generation", "Run portwise report --run runs/latest.json --format all to generate reports.")
             state = run.metadata.get("state", {})
-            print(json.dumps({
+            summary = {
                 "run": str(args.workspace / "runs" / "latest.json"),
                 "dry_run": dry_run,
                 "commands": [command.command for command in run.commands],
@@ -122,7 +149,11 @@ def main(argv: list[str] | None = None) -> int:
                     "Classify HTTP/TLS/SMB/remote-access/database/devops/container/VPN targets",
                     "Write evidence/targets/*.json",
                 ],
-            }, indent=2))
+            }
+            if args.no_progress:
+                print(json.dumps(summary, indent=2))
+            else:
+                _print_scan_summary(run, state)
             return 0
 
         if args.command == "analyze":
@@ -165,6 +196,7 @@ def main(argv: list[str] | None = None) -> int:
             report = build_json_report_from_dict(data)
             output_dir = Path("reports")
             written: list[str] = []
+            update_progress_file_phase(Path("."), "Report generation", PHASE_RUNNING, f"Generating {args.format} report output")
             if args.format in {"json", "all"}:
                 default_json = output_dir / ("sample_report.json" if "examples" in str(args.run) else "PortWise_Report.json")
                 output = args.output if args.format == "json" and args.output else default_json
@@ -178,12 +210,17 @@ def main(argv: list[str] | None = None) -> int:
                 output = args.output if args.format == "html" and args.output else output_dir / "PortWise_Report.html"
                 write_html_report(report, output)
                 written.append(str(output))
+            update_progress_file_phase(Path("."), "Report generation", PHASE_DONE, f"Wrote {len(written)} report file(s)")
             print(json.dumps({"written": written}, indent=2))
             return 0
 
         if args.command == "retest":
             written = write_retest_report(args.previous, args.current, args.output_dir, args.format)
             print(json.dumps({"written": [str(path) for path in written]}, indent=2))
+            return 0
+
+        if args.command == "status":
+            _print_status(args.workspace)
             return 0
 
         if args.command == "modules":
@@ -203,11 +240,85 @@ def main(argv: list[str] | None = None) -> int:
         print(f"Configuration error: {exc}", file=sys.stderr)
         return 2
     except Exception as exc:
+        if getattr(args, "command", None) == "report":
+            try:
+                update_progress_file_phase(Path("."), "Report generation", PHASE_FAILED, str(exc))
+            except Exception:
+                pass
         print(f"PortWise error: {exc}", file=sys.stderr)
         return 1
 
     parser.print_help()
     return 1
+
+
+def _print_scan_summary(run, state: dict) -> None:
+    findings = run.findings
+    confirmed = sum(1 for finding in findings if str(finding.confidence) == "Confirmed" or getattr(finding.confidence, "value", "") == "Confirmed")
+    needs_validation = sum(1 for finding in findings if getattr(finding, "manual_validation", False) or getattr(finding.confidence, "value", "") == "Needs Manual Validation")
+    false_positive = sum(1 for finding in findings if getattr(finding.confidence, "value", "") == "False Positive Candidate")
+    print()
+    print("PortWise scan completed")
+    print()
+    print(f"Targets loaded: {len(state.get('targets_loaded', []))}")
+    print(f"Live hosts: {len(state.get('live_hosts', []))}")
+    print(f"TCP open ports: {sum(len(v) for v in state.get('tcp_open_ports_by_host', {}).values())}")
+    print(f"UDP open ports: {sum(len(v) for v in state.get('udp_open_ports_by_host', {}).values())}")
+    print(f"Services discovered: {sum(len(v) for v in state.get('services_by_host', {}).values())}")
+    print(f"Findings: {len(findings)}")
+    print(f"Confirmed: {confirmed}")
+    print(f"Needs validation: {needs_validation}")
+    print(f"False positive candidates: {false_positive}")
+    print()
+    print("Reports:")
+    print("- runs/latest.json")
+    print("- reports/PortWise_Report.html")
+    print("- reports/PortWise_Report.xlsx")
+    print()
+    print("Next commands:")
+    print("portwise report --run runs/latest.json --format all")
+    print("portwise retest --previous runs/old.json --current runs/latest.json --format all")
+
+
+def _print_status(workspace: Path) -> None:
+    progress = load_progress(workspace)
+    latest = workspace / "runs" / "latest.json"
+    if not progress:
+        print(f"No progress file found at {workspace / 'runs' / 'progress.json'}")
+        if latest.exists():
+            print(f"Latest run exists: {latest}")
+        return
+    print(f"Run ID: {progress.get('run_id')}")
+    print(f"Profile: {progress.get('profile')}")
+    print(f"Workspace: {progress.get('workspace')}")
+    print(f"Current phase: {progress.get('current_phase')}")
+    print(f"Elapsed seconds: {progress.get('elapsed_seconds')}")
+    print()
+    print("Phases:")
+    for phase in progress.get("phases", []):
+        status = phase.get("status")
+        name = phase.get("name")
+        elapsed = phase.get("elapsed_seconds", 0)
+        message = phase.get("message", "")
+        print(f"- {name}: {status} ({elapsed}s) {message}")
+        if phase.get("error"):
+            print(f"  error: {phase['error']}")
+    print()
+    counters = progress.get("counters", {})
+    print("Counters:")
+    for key, value in counters.items():
+        print(f"- {key}: {value}")
+    if latest.exists():
+        try:
+            data = json.loads(latest.read_text(encoding="utf-8"))
+            generated = data.get("metadata", {}).get("state", {}).get("generated_files", [])
+            if generated:
+                print()
+                print("Generated files:")
+                for item in generated:
+                    print(f"- {item}")
+        except Exception:
+            print(f"Latest run exists: {latest}")
 
 
 if __name__ == "__main__":

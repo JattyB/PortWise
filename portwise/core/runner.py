@@ -7,6 +7,7 @@ from typing import Any
 from portwise.core.config import PortWiseConfig, Profile
 from portwise.core.models import Asset, Finding, RunResult, RunState, Service
 from portwise.core.module_runner import execute_safe_modules, module_summary
+from portwise.core.progress import PHASE_DONE, PHASE_FAILED, ProgressTracker
 from portwise.core.routing import module_target_counts, route_assets, write_target_files
 from portwise.core.service_groups import ServiceDetectionGroup, group_hosts_by_ports, prepare_group_files
 from portwise.intelligence.confidence import apply_confidence
@@ -39,6 +40,7 @@ def run_scan(
     no_modules: bool = False,
     no_cve: bool = False,
     internet_facing: bool | None = None,
+    progress: ProgressTracker | None = None,
 ) -> RunResult:
     run = RunResult(project=str(config.project.get("name", workspace.name)), profile=profile.name)
     state = RunState(project=run.project, profile=profile.name, targets_loaded=_load_targets(targets_file))
@@ -46,20 +48,31 @@ def run_scan(
     nmap = NmapRunner(workspace, timeout_seconds=timeout)
     live_hosts_file = workspace / "scans" / "live_hosts.txt"
     latest = workspace / "runs" / "latest.json"
+    if progress:
+        progress.update_counters(targets_total=len(state.targets_loaded))
+        progress.start_phase("Target validation", f"{len(state.targets_loaded)} targets loaded")
+        progress.finish_phase("Target validation", message="targets loaded")
 
     for step in profile.nmap_steps:
+        phase_name = _phase_name(step)
         if step != "discovery" and not state.live_hosts:
             xml_path = workspace / "scans" / PHASE_XML["discovery"]
             if xml_path.exists():
                 _merge_discovery(state, parse_nmap_xml(xml_path))
                 _write_live_hosts(live_hosts_file, state.live_hosts)
+                if progress:
+                    _update_progress_counters(progress, state, run)
             else:
                 _skip(state, step, "No live hosts are available yet; discovery XML is missing.")
+                if progress:
+                    progress.skip_phase(phase_name, "No live hosts are available yet; discovery XML is missing.")
                 _persist(latest, run, state)
                 continue
 
         if step == "tcp_services" and not _all_ports(state.tcp_open_ports_by_host):
             _skip(state, step, "No open TCP ports discovered; skipping TCP service detection.")
+            if progress:
+                progress.skip_phase(phase_name, "No open TCP ports discovered; skipping TCP service detection.")
             _persist(latest, run, state)
             continue
 
@@ -73,6 +86,7 @@ def run_scan(
                 dry_run=dry_run,
                 latest=latest,
                 open_ports_by_host=state.tcp_open_ports_by_host,
+                progress=progress,
             )
             continue
 
@@ -82,6 +96,8 @@ def run_scan(
         )
         if step == "udp_services" and not _all_ports(udp_ports_for_services):
             _skip(state, step, "No open UDP ports discovered; skipping UDP service detection.")
+            if progress:
+                progress.skip_phase(phase_name, "No open UDP ports discovered; skipping UDP service detection.")
             _persist(latest, run, state)
             continue
 
@@ -95,9 +111,19 @@ def run_scan(
                 dry_run=dry_run,
                 latest=latest,
                 open_ports_by_host=udp_ports_for_services,
+                progress=progress,
             )
             continue
 
+        if progress:
+            command_preview, _ = nmap.build_command(
+                step,
+                targets_file=targets_file,
+                live_hosts_file=live_hosts_file,
+                open_tcp_ports=_ports_arg(_all_ports(state.tcp_open_ports_by_host), "tcp"),
+                open_udp_ports=_ports_arg(_interesting_udp_ports(state), "udp"),
+            )
+            progress.start_phase(phase_name, f"running {step}", command=command_preview, output_file=str(workspace / "scans" / PHASE_XML.get(step, "")))
         command = nmap.run_step(
             step,
             targets_file=targets_file,
@@ -111,6 +137,8 @@ def run_scan(
         if command.error:
             run.failed_checks.append(f"nmap:{step}:{command.error}")
             state.failed_phases.append(f"{step}: {command.error}")
+            if progress:
+                progress.fail_phase(phase_name, command.error)
 
         xml_path = workspace / "scans" / PHASE_XML.get(step, "")
         if xml_path.exists():
@@ -119,10 +147,17 @@ def run_scan(
             if step == "discovery":
                 _write_live_hosts(live_hosts_file, state.live_hosts)
                 state.generated_files.append(str(live_hosts_file))
+            if progress:
+                _update_progress_counters(progress, state, run)
+                progress.finish_phase(phase_name, message=f"parsed {xml_path}")
         elif dry_run:
             _skip(state, step, f"Dry-run only; expected XML not present at {xml_path}.")
+            if progress:
+                progress.skip_phase(phase_name, f"Dry-run planned command; expected XML not present at {xml_path}.")
         else:
             _skip(state, step, f"Expected XML not found after phase: {xml_path}.")
+            if progress and not command.error:
+                progress.skip_phase(phase_name, f"Expected XML not found after phase: {xml_path}.")
         _persist(latest, run, state)
 
     if not state.live_hosts:
@@ -130,16 +165,28 @@ def run_scan(
 
     routes = route_assets(run.assets, probe_tls=False)
     state.module_targets = routes
+    if progress:
+        progress.start_phase("Module routing", "classifying routed targets")
     state.generated_files.extend(write_target_files(routes, workspace))
+    if progress:
+        progress.finish_phase("Module routing", message=f"{sum(len(v) for v in routes.values())} routed target entries")
     module_config = _module_config(config, profile, internet_facing=internet_facing)
     if no_modules:
         state.skipped_phases.append("modules: Disabled by --no-modules.")
+        if progress:
+            progress.skip_phase("Module execution", "Disabled by --no-modules.")
     else:
+        if progress:
+            progress.start_phase("Module execution", "running safe modules", progress_total=sum(len(v) for v in routes.values()))
         module_results, module_findings = execute_safe_modules(
             routes,
             config=module_config,
             enabled_modules=_enabled_modules(profile),
             dry_run=dry_run,
+            progress_callback=(
+                lambda module, current, total, findings, completed, overall:
+                _module_progress(progress, module, current, total, findings, completed, overall)
+            ) if progress else None,
         )
         run.findings.extend(module_findings)
         run.evidence.extend([evidence for finding in module_findings for evidence in finding.evidence])
@@ -148,19 +195,36 @@ def run_scan(
         state.module_errors = summary["module_errors"]
         state.findings_by_module = summary["findings_by_module"]
         state.evidence_by_module = summary["evidence_by_module"]
+        if progress:
+            progress.update_counters(findings_found=len(run.findings), modules_completed=len(module_results), modules_total=len(module_results))
+            progress.finish_phase("Module execution", message=f"{len(module_results)} module target runs, {len(module_findings)} findings")
     if not no_cve and not dry_run and bool(profile.modules.get("cve_enrichment", False)):
+        if progress:
+            services = _services_from_assets(run.assets)
+            progress.start_phase("CVE enrichment", f"enriching {len(services)} services/products/CPEs")
         cve_findings, cve_notes = enrich_services_with_cves(_services_from_assets(run.assets), workspace / "cache" / "cve", enabled=True)
         run.findings.extend(cve_findings)
         run.evidence.extend([evidence for finding in cve_findings for evidence in finding.evidence])
         state.module_errors.extend(cve_notes)
+        if progress:
+            progress.update_counters(findings_found=len(run.findings))
+            progress.finish_phase("CVE enrichment", message=f"{len(cve_findings)} CVE findings; providers: NVD/KEV/EPSS")
     elif no_cve:
         state.skipped_phases.append("cve: Disabled by --no-cve.")
+        if progress:
+            progress.skip_phase("CVE enrichment", "Disabled by --no-cve.")
     elif dry_run and bool(profile.modules.get("cve_enrichment", False)):
         state.skipped_phases.append("cve: Dry-run mode; CVE providers not queried.")
+        if progress:
+            progress.skip_phase("CVE enrichment", "Dry-run mode; CVE providers not queried.")
+    elif progress:
+        progress.skip_phase("CVE enrichment", "CVE enrichment disabled by profile.")
     run.metadata["state"] = state.to_dict()
     run.metadata["module_target_counts"] = module_target_counts(routes)
     run.finish()
     _persist(latest, run, state)
+    if progress:
+        _update_progress_counters(progress, state, run)
     return run
 
 
@@ -361,6 +425,7 @@ def _run_grouped_service_detection(
     dry_run: bool,
     latest: Path,
     open_ports_by_host: dict[str, list[int]],
+    progress: ProgressTracker | None = None,
 ) -> None:
     groups = group_hosts_by_ports(open_ports_by_host, protocol)
     phase = f"{protocol}_services"
@@ -368,21 +433,35 @@ def _run_grouped_service_detection(
 
     if not groups:
         _skip(state, phase, f"No {protocol.upper()} service-detection groups were created.")
+        if progress:
+            progress.skip_phase(_phase_name(phase), f"No {protocol.upper()} service-detection groups were created.")
         _persist(latest, run, state)
         return
 
     generated = prepare_group_files(groups, workspace)
     state.generated_files.extend(generated)
     merged_assets: list[Asset] = []
+    phase_name = _phase_name(phase)
+    if progress:
+        progress.start_phase(phase_name, f"{len(groups)} {protocol.upper()} service groups", progress_total=len(groups))
 
-    for group in groups:
+    for index, group in enumerate(groups, start=1):
         command = nmap.build_service_detection_command(protocol, group)
+        if progress:
+            progress.update_phase(
+                phase_name,
+                current=index - 1,
+                total=len(groups),
+                message=f"Group {index}/{len(groups)}: ports {','.join(str(p) for p in group.ports)} | hosts: {len(group.hosts)} | running",
+            )
         result = nmap.run_command(group.group_id, command, dry_run=dry_run)
         run.commands.append(result)
         state.commands_executed.append(result)
         if result.error:
             run.failed_checks.append(f"nmap:{group.group_id}:{result.error}")
             state.failed_phases.append(f"{group.group_id}: {result.error}")
+            if progress:
+                progress.update_phase(phase_name, current=index, total=len(groups), message=f"{group.group_id} failed; continuing")
 
         xml_path = Path(group.parsed_xml_file or "")
         if xml_path.exists():
@@ -391,10 +470,19 @@ def _run_grouped_service_detection(
             run.assets = _merge_assets(run.assets, assets)
             _merge_phase(state, phase, assets)
             group.service_count_after_merge = _service_count(run.assets)
+            if progress:
+                _update_progress_counters(progress, state, run)
         elif dry_run:
             _skip(state, group.group_id, f"Dry-run only; expected XML not present at {xml_path}.")
         else:
             _skip(state, group.group_id, f"Expected grouped service XML not found: {xml_path}.")
+        if progress:
+            progress.update_phase(
+                phase_name,
+                current=index,
+                total=len(groups),
+                message=f"Group {index}/{len(groups)} complete | output XML: {xml_path}",
+            )
 
     # Parse any existing grouped XML outputs as an offline merge path.
     for xml_path in sorted((workspace / "scans").glob(f"{'04_tcp' if protocol == 'tcp' else '07_udp'}_services_{protocol}_group_*.xml")):
@@ -403,6 +491,8 @@ def _run_grouped_service_detection(
         _merge_phase(state, phase, assets)
 
     setattr(state, state_attr, [group.to_dict() for group in groups])
+    if progress:
+        progress.finish_phase(phase_name, message=f"{len(groups)} groups processed")
     _persist(latest, run, state)
 
 
@@ -472,3 +562,39 @@ def _ports_arg(ports: list[int], protocol: str) -> str:
 def _write_live_hosts(path: Path, hosts: list[str]) -> None:
     ensure_dir(path.parent)
     path.write_text("\n".join(hosts) + ("\n" if hosts else ""), encoding="utf-8")
+
+
+def _phase_name(step: str) -> str:
+    return {
+        "discovery": "Host discovery",
+        "tcp_top_1000": "TCP top 1000 scan",
+        "tcp_full": "TCP full scan",
+        "tcp_services": "Grouped TCP service detection",
+        "udp_top_1000": "UDP top 1000 scan",
+        "udp_services": "Grouped UDP service detection",
+    }.get(step, step)
+
+
+def _update_progress_counters(progress: ProgressTracker, state: RunState, run: RunResult) -> None:
+    progress.update_counters(
+        targets_total=len(state.targets_loaded),
+        live_hosts=len(state.live_hosts),
+        dead_hosts=len(state.dead_hosts),
+        tcp_ports_found=sum(len(ports) for ports in state.tcp_open_ports_by_host.values()),
+        udp_ports_found=sum(len(ports) for ports in state.udp_open_ports_by_host.values()),
+        services_found=sum(len(services) for services in state.services_by_host.values()) or _service_count(run.assets),
+        findings_found=len(run.findings),
+    )
+
+
+def _module_progress(
+    progress: ProgressTracker,
+    module: str,
+    current: int,
+    total: int,
+    findings: int,
+    completed: int,
+    overall: int,
+) -> None:
+    progress.update_counters(modules_completed=completed, modules_total=overall, findings_found=findings)
+    progress.update_phase("Module execution", current=completed, total=overall, message=f"{module}: {current}/{total} targets checked, {findings} findings")

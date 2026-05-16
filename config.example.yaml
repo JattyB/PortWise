@@ -63,6 +63,12 @@ reports:
     - excel
     - html
 
+progress:
+  enabled: true
+  write_progress_file: true
+  show_current_command: true
+  show_latest_output_line: false
+
 dns:
   recursion_check: true
   zone_transfer_check: true
