@@ -1,0 +1,5 @@
+# Authorized targets only.
+# Add one host, CIDR, or DNS name per line.
+192.0.2.10
+198.51.100.20
+example.com

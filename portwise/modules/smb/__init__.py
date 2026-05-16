@@ -1,0 +1,1 @@
+"""SMB safe-check placeholders."""

@@ -1,0 +1,25 @@
+<?xml version="1.0"?>
+<nmaprun>
+  <host>
+    <status state="up"/><address addr="192.0.2.5" addrtype="ipv4"/>
+    <ports>
+      <port protocol="tcp" portid="22"><state state="open" reason="syn-ack"/><service name="ssh"/></port>
+      <port protocol="tcp" portid="80"><state state="open" reason="syn-ack"/><service name="http"/></port>
+      <port protocol="tcp" portid="443"><state state="open" reason="syn-ack"/><service name="https"/></port>
+    </ports>
+  </host>
+  <host>
+    <status state="up"/><address addr="192.0.2.6" addrtype="ipv4"/>
+    <ports>
+      <port protocol="tcp" portid="443"><state state="open" reason="syn-ack"/><service name="https"/></port>
+      <port protocol="tcp" portid="22"><state state="open" reason="syn-ack"/><service name="ssh"/></port>
+      <port protocol="tcp" portid="80"><state state="open" reason="syn-ack"/><service name="http"/></port>
+    </ports>
+  </host>
+  <host>
+    <status state="up"/><address addr="192.0.2.7" addrtype="ipv4"/>
+    <ports>
+      <port protocol="tcp" portid="445"><state state="open" reason="syn-ack"/><service name="microsoft-ds"/></port>
+    </ports>
+  </host>
+</nmaprun>

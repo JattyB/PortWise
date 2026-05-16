@@ -1,0 +1,45 @@
+<?xml version="1.0"?>
+<nmaprun>
+  <host>
+    <status state="up" reason="syn-ack"/>
+    <address addr="192.0.2.10" addrtype="ipv4"/>
+    <hostnames><hostname name="app.example.test" type="user"/></hostnames>
+    <ports>
+      <port protocol="tcp" portid="8080">
+        <state state="open" reason="syn-ack"/>
+        <service name="http" product="Apache Tomcat" version="9.0.1" method="probed" conf="10">
+          <cpe>cpe:/a:apache:tomcat:9.0.1</cpe>
+        </service>
+        <script id="http-title" output="Tomcat Manager"/>
+      </port>
+      <port protocol="tcp" portid="8443">
+        <state state="open" reason="syn-ack"/>
+        <service name="https" product="nginx" version="1.24.0" tunnel="ssl" method="probed" conf="10"/>
+      </port>
+      <port protocol="tcp" portid="2222">
+        <state state="open" reason="syn-ack"/>
+        <service name="ssh" product="OpenSSH" version="9.2" extrainfo="protocol 2.0" method="probed" conf="10"/>
+      </port>
+      <port protocol="tcp" portid="2121">
+        <state state="open" reason="syn-ack"/>
+        <service name="ftp" product="vsftpd" version="3.0.5" method="probed" conf="10"/>
+      </port>
+      <port protocol="tcp" portid="445">
+        <state state="open" reason="syn-ack"/>
+        <service name="microsoft-ds" product="Samba smbd" version="4.18" method="probed" conf="10"/>
+      </port>
+      <port protocol="udp" portid="161">
+        <state state="open" reason="udp-response"/>
+        <service name="snmp" product="Net-SNMP" version="5.9" method="probed" conf="10"/>
+      </port>
+      <port protocol="udp" portid="500">
+        <state state="open|filtered" reason="no-response"/>
+        <service name="isakmp" method="table" conf="3"/>
+      </port>
+    </ports>
+  </host>
+  <host>
+    <status state="down" reason="no-response"/>
+    <address addr="192.0.2.20" addrtype="ipv4"/>
+  </host>
+</nmaprun>

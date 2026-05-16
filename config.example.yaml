@@ -1,0 +1,226 @@
+project:
+  name: PortWise Assessment
+  context: unknown
+  authorized_use_only: true
+
+# Safe defaults. Increase validation_level only in future controlled modes.
+scanner:
+  nmap_timeout_seconds: 1800
+  timeout: 5
+  default_dry_run: true
+  output_dir: scans
+  validation_level: safe
+  internet_facing: false
+  tcp_syn_scan_when_privileged: true
+  tcp_top_ports: 1000
+  tcp_full_scan: true
+  udp_top_1000: true
+  udp_service_detection_on_open_filtered: false
+  tls_expiry_days: 30
+  snmp_default_community_check: true
+  ftp_anonymous_check: true
+
+http:
+  max_redirects: 3
+  max_body_bytes: 262144
+  safe_paths:
+    - /.git/HEAD
+    - /.env
+    - /server-status
+    - /phpinfo.php
+    - /swagger-ui/
+    - /swagger.json
+    - /v2/api-docs
+    - /actuator/health
+    - /actuator/env
+    - /admin
+    - /login
+    - /manager/html
+
+cve:
+  enabled: true
+  nvd_enabled: true
+  kev_enabled: true
+  epss_enabled: true
+  cache_dir: cache/cve
+  timeout: 10
+  nvd_api_key_env: PORTWISE_NVD_API_KEY
+
+reports:
+  formats: [json, excel, html]
+
+dns:
+  recursion_check: true
+  zone_transfer_check: true
+  zones: []
+
+snmp:
+  default_community_check: true
+  communities: [public, private]
+  max_oids: 3
+  timeout_seconds: 3
+
+ntp:
+  timeout_seconds: 3
+
+database:
+  unauthenticated_checks: true
+  timeout_seconds: 4
+  max_response_bytes: 4096
+
+mail:
+  timeout_seconds: 4
+  open_relay_check: false
+
+imports:
+  testssl_json_enabled: true
+  nessus_csv_enabled: true
+
+cache:
+  enabled: true
+  directory: cache
+
+safety:
+  no_bruteforce: true
+  no_exploitation: true
+  no_write_operations: true
+  max_response_bytes: 4096
+
+profiles:
+  quick-triage:
+    description: Fast, low-noise service discovery and safe HTTP/TLS hygiene checks.
+    context: unknown
+    nmap_steps:
+      - discovery
+      - tcp_top_1000
+    modules:
+      tls: true
+      http: true
+      exposure: true
+      smb_safe: false
+      ssh: true
+      rdp: true
+      winrm: true
+      ftp: true
+      snmp: true
+      dns: true
+      ntp: true
+      database: true
+      devops: true
+      kubernetes: true
+      mail: true
+      vpn: true
+      cve_enrichment: false
+      confidence_scoring: true
+      false_positive_scoring: true
+    reports: [json]
+
+  internal-vapt:
+    description: Internal authorized review with moderate exposure severity defaults.
+    context: internal
+    nmap_steps:
+      - discovery
+      - tcp_top_1000
+      - tcp_services
+    modules:
+      tls: true
+      http: true
+      exposure: true
+      smb_safe: true
+      ssh: true
+      rdp: true
+      winrm: true
+      ftp: true
+      snmp: true
+      dns: true
+      ntp: true
+      database: true
+      devops: true
+      kubernetes: true
+      mail: true
+      vpn: true
+      cve_enrichment: false
+      confidence_scoring: true
+      false_positive_scoring: true
+    reports: [json]
+
+  external-vapt:
+    description: External perimeter review with higher exposure severity defaults.
+    context: external
+    nmap_steps:
+      - discovery
+      - tcp_top_1000
+      - tcp_services
+    modules:
+      tls: true
+      http: true
+      exposure: true
+      smb_safe: false
+      ssh: true
+      rdp: true
+      winrm: true
+      ftp: true
+      snmp: true
+      dns: true
+      ntp: true
+      database: true
+      devops: true
+      kubernetes: true
+      mail: true
+      vpn: true
+      cve_enrichment: false
+      confidence_scoring: true
+      false_positive_scoring: true
+    reports: [json]
+
+  full-vapt:
+    description: Full safe VAPT discovery, fingerprinting, native validation, and JSON reporting.
+    context: unknown
+    nmap_steps:
+      - discovery
+      - tcp_top_1000
+      - tcp_full
+      - tcp_services
+      - udp_top_1000
+      - udp_services
+    scan_features:
+      tcp_top_1000: true
+      tcp_full_port_scan: true
+      tcp_service_detection: true
+      udp_top_1000: true
+      service_fingerprinting: true
+    modules:
+      tls: true
+      http: true
+      smb_safe: true
+      ssh: true
+      rdp: true
+      winrm: true
+      ftp: true
+      snmp: true
+      dns: true
+      ntp: true
+      database: true
+      devops: true
+      kubernetes: true
+      mail: true
+      vpn: true
+      exposure: true
+      cve_enrichment: true
+      confidence_scoring: true
+      false_positive_scoring: true
+    reports: [json]
+
+  offline-analysis:
+    description: Parse existing Nmap XML and produce normalized findings without active scanning.
+    context: unknown
+    nmap_steps: []
+    modules:
+      tls: false
+      http: false
+      exposure: true
+      smb_safe: false
+      cve_enrichment: false
+      confidence_scoring: true
+      false_positive_scoring: true
+    reports: [json]

@@ -1,0 +1,6 @@
+<?xml version="1.0"?>
+<nmaprun>
+  <host><status state="up"/><address addr="192.0.2.5" addrtype="ipv4"/></host>
+  <host><status state="up"/><address addr="192.0.2.6" addrtype="ipv4"/></host>
+  <host><status state="up"/><address addr="192.0.2.7" addrtype="ipv4"/></host>
+</nmaprun>
