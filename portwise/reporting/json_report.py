@@ -5,7 +5,7 @@ from typing import Any
 
 from portwise.core.models import RunResult
 from portwise.intelligence.risk_scoring import finding_counts
-from portwise.utils.files import write_json
+from portwise.utils.files import make_json_safe, write_json
 
 
 def build_json_report(run: RunResult) -> dict[str, Any]:
@@ -18,7 +18,7 @@ def build_json_report(run: RunResult) -> dict[str, Any]:
         "started_at": run.started_at,
         "finished_at": run.finished_at,
     }
-    return data
+    return make_json_safe(data)
 
 
 def write_json_report(run: RunResult, output_path: Path) -> Path:
@@ -43,7 +43,7 @@ def build_json_report_from_dict(data: dict[str, Any]) -> dict[str, Any]:
         "started_at": data.get("started_at"),
         "finished_at": data.get("finished_at"),
     }
-    return report
+    return make_json_safe(report)
 
 
 def _promote_state(report: dict[str, Any]) -> None:

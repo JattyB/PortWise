@@ -9,7 +9,7 @@ from pathlib import Path
 
 from portwise.core.models import CommandResult, utc_now
 from portwise.core.service_groups import ServiceDetectionGroup, ports_to_arg
-from portwise.utils.files import ensure_dir
+from portwise.utils.files import ensure_dir, ensure_text
 
 
 NMAP_TEMPLATES: dict[str, list[str]] = {
@@ -123,20 +123,24 @@ class NmapRunner:
                 cwd=self.workspace,
                 capture_output=True,
                 text=True,
+                encoding="utf-8",
+                errors="replace",
                 timeout=self.timeout_seconds,
                 check=False,
             )
-            stdout_path.write_text(completed.stdout, encoding="utf-8", errors="replace")
-            stderr_path.write_text(completed.stderr, encoding="utf-8", errors="replace")
+            stdout = ensure_text(completed.stdout)
+            stderr = ensure_text(completed.stderr)
+            _write_command_log(stdout_path, stdout)
+            _write_command_log(stderr_path, stderr)
             result.return_code = completed.returncode
             if completed.returncode != 0:
-                result.error = _format_command_error(f"nmap exited with return code {completed.returncode}.", completed.stderr)
+                result.error = _format_command_error(f"nmap exited with return code {completed.returncode}.", stderr, stdout)
         except subprocess.TimeoutExpired as exc:
-            stdout_path.write_text(exc.stdout or "", encoding="utf-8", errors="replace")
-            stderr_path.write_text(exc.stderr or "", encoding="utf-8", errors="replace")
-            result.error = f"nmap timed out after {self.timeout_seconds} seconds."
+            _write_command_log(stdout_path, ensure_text(exc.stdout))
+            _write_command_log(stderr_path, ensure_text(exc.stderr))
+            result.error = _format_command_error(f"nmap timed out after {self.timeout_seconds} seconds.", ensure_text(exc.stderr), ensure_text(exc.stdout))
         except OSError as exc:
-            result.error = str(exc)
+            result.error = ensure_text(exc)
         finally:
             result.finished_at = utc_now()
         return result
@@ -194,26 +198,42 @@ class NmapRunner:
                 cwd=self.workspace,
                 capture_output=True,
                 text=True,
+                encoding="utf-8",
+                errors="replace",
                 timeout=self.timeout_seconds,
                 check=False,
             )
-            stdout_path.write_text(completed.stdout, encoding="utf-8", errors="replace")
-            stderr_path.write_text(completed.stderr, encoding="utf-8", errors="replace")
+            stdout = ensure_text(completed.stdout)
+            stderr = ensure_text(completed.stderr)
+            _write_command_log(stdout_path, stdout)
+            _write_command_log(stderr_path, stderr)
             result.return_code = completed.returncode
             if completed.returncode != 0:
-                result.error = _format_command_error(f"nmap exited with return code {completed.returncode}.", completed.stderr)
+                result.error = _format_command_error(f"nmap exited with return code {completed.returncode}.", stderr, stdout)
         except subprocess.TimeoutExpired as exc:
-            stdout_path.write_text(exc.stdout or "", encoding="utf-8", errors="replace")
-            stderr_path.write_text(exc.stderr or "", encoding="utf-8", errors="replace")
-            result.error = f"nmap timed out after {self.timeout_seconds} seconds."
+            _write_command_log(stdout_path, ensure_text(exc.stdout))
+            _write_command_log(stderr_path, ensure_text(exc.stderr))
+            result.error = _format_command_error(f"nmap timed out after {self.timeout_seconds} seconds.", ensure_text(exc.stderr), ensure_text(exc.stdout))
         except OSError as exc:
-            result.error = str(exc)
+            result.error = ensure_text(exc)
         finally:
             result.finished_at = utc_now()
         return result
 
 
-def _format_command_error(message: str, stderr: str) -> str:
-    lines = [line for line in stderr.splitlines() if line.strip()]
+def _write_command_log(path: Path, data: object) -> None:
+    try:
+        ensure_dir(path.parent)
+        path.write_text(ensure_text(data), encoding="utf-8", errors="replace")
+    except OSError:
+        return
+
+
+def _format_command_error(message: str, stderr: object = "", stdout: object = "") -> str:
+    stderr_text = ensure_text(stderr)
+    stdout_text = ensure_text(stdout)
+    lines = [line for line in stderr_text.splitlines() if line.strip()]
+    if not lines:
+        lines = [line for line in stdout_text.splitlines() if line.strip()]
     tail = "\n".join(lines[-10:])
-    return f"{message}\nLast stderr lines:\n{tail}" if tail else message
+    return f"{message}\nLast output lines:\n{tail}" if tail else message

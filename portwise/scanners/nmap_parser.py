@@ -8,7 +8,12 @@ from portwise.core.models import Asset, Service
 
 def parse_nmap_xml(path: Path | str) -> list[Asset]:
     xml_path = Path(path)
-    tree = ET.parse(xml_path)
+    if not xml_path.exists() or xml_path.stat().st_size == 0:
+        return []
+    try:
+        tree = ET.parse(xml_path)
+    except ET.ParseError:
+        return []
     root = tree.getroot()
     assets: list[Asset] = []
 

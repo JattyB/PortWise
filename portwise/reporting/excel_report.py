@@ -5,8 +5,11 @@ import zipfile
 from pathlib import Path
 from typing import Any
 
+from portwise.utils.files import ensure_text, make_json_safe
+
 
 def write_excel_report(data: dict[str, Any], output_path: Path) -> Path:
+    data = make_json_safe(data)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     try:
         from openpyxl import Workbook
@@ -175,8 +178,9 @@ def _xml(value: str) -> str:
 
 
 def _cell_value(value: Any) -> Any:
+    value = make_json_safe(value)
     if isinstance(value, (list, tuple, set)):
-        return ", ".join(str(item) for item in value)
+        return ", ".join(ensure_text(item) for item in value)
     if isinstance(value, dict):
         return json.dumps(value, sort_keys=True)[:500]
-    return value
+    return ensure_text(value) if value is not None else ""

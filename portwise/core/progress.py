@@ -8,7 +8,7 @@ from typing import Any
 from uuid import uuid4
 
 from portwise.core.models import utc_now
-from portwise.utils.files import ensure_dir
+from portwise.utils.files import ensure_dir, ensure_text, make_json_safe
 
 
 PHASE_PENDING = "pending"
@@ -111,12 +111,12 @@ class ProgressTracker:
         phase.started_at = phase.started_at or utc_now()
         self._phase_starts[name] = time.monotonic()
         phase.ended_at = None
-        phase.message = message
-        phase.command = command or []
-        phase.output_file = output_file
+        phase.message = ensure_text(message)
+        phase.command = [ensure_text(part) for part in (command or [])]
+        phase.output_file = ensure_text(output_file) if output_file is not None else None
         phase.progress_total = progress_total
         self.state.current_phase = name
-        self.emit(f"[{self._phase_index(name)}/{self.state.total_phases}] {name}: {message or 'running'}", command=phase.command)
+        self.emit(f"[{self._phase_index(name)}/{self.state.total_phases}] {name}: {ensure_text(message) or 'running'}", command=phase.command)
         self.save()
 
     def update_phase(self, name: str, *, current: int | None = None, total: int | None = None, message: str | None = None) -> None:
@@ -126,7 +126,7 @@ class ProgressTracker:
         if total is not None:
             phase.progress_total = total
         if message is not None:
-            phase.message = message
+            phase.message = ensure_text(message)
         self.emit(f"{name}: {phase.progress_current}/{phase.progress_total} {phase.message}".strip())
         self.save()
 
@@ -134,9 +134,9 @@ class ProgressTracker:
         phase = self._phase(name)
         phase.status = status
         phase.ended_at = utc_now()
-        phase.error = error
+        phase.error = ensure_text(error) if error is not None else None
         if message:
-            phase.message = message
+            phase.message = ensure_text(message)
         if phase.started_at:
             phase.elapsed_seconds = round(max(0.0, time.monotonic() - self._phase_starts.get(name, time.monotonic())), 2)
         self.state.current_phase = name
@@ -153,6 +153,8 @@ class ProgressTracker:
     def emit(self, message: str, command: list[str] | None = None) -> None:
         if not self.enabled:
             return
+        message = ensure_text(message)
+        command = [ensure_text(part) for part in command] if command else None
         if self.console:
             self.console.print(f"[cyan]PortWise[/cyan] {message}")
             if command and self.show_current_command:
@@ -166,7 +168,7 @@ class ProgressTracker:
         self.state.updated_at = utc_now()
         self.state.elapsed_seconds = round(time.monotonic() - self._start_monotonic, 2)
         ensure_dir(self.path.parent)
-        self.path.write_text(json.dumps(self.state.to_dict(), indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        self.path.write_text(json.dumps(make_json_safe(self.state.to_dict()), indent=2, sort_keys=True) + "\n", encoding="utf-8", errors="replace")
 
     def _phase(self, name: str) -> ProgressPhase:
         for phase in self.state.phases:
@@ -203,7 +205,7 @@ def load_progress(workspace: Path) -> dict[str, Any] | None:
     path = workspace / "runs" / "progress.json"
     if not path.exists():
         return None
-    return json.loads(path.read_text(encoding="utf-8"))
+    return make_json_safe(json.loads(path.read_text(encoding="utf-8")))
 
 
 def update_progress_file_phase(workspace: Path, name: str, status: str, message: str = "") -> None:
@@ -218,11 +220,11 @@ def update_progress_file_phase(workspace: Path, name: str, status: str, message:
         phases.append(phase)
     now = utc_now()
     phase["status"] = status
-    phase["message"] = message
+    phase["message"] = ensure_text(message)
     if status == PHASE_RUNNING:
         phase["started_at"] = phase.get("started_at") or now
         data["current_phase"] = name
     if status in {PHASE_DONE, PHASE_FAILED, PHASE_SKIPPED}:
         phase["ended_at"] = now
     data["updated_at"] = now
-    path.write_text(json.dumps(data, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    path.write_text(json.dumps(make_json_safe(data), indent=2, sort_keys=True) + "\n", encoding="utf-8", errors="replace")

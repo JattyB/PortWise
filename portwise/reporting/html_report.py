@@ -4,8 +4,11 @@ import html
 from pathlib import Path
 from typing import Any
 
+from portwise.utils.files import ensure_text, make_json_safe
+
 
 def write_html_report(data: dict[str, Any], output_path: Path) -> Path:
+    data = make_json_safe(data)
     findings = data.get("findings", [])
     state = data.get("metadata", {}).get("state", {})
     parts = [
@@ -106,4 +109,4 @@ def cell(value: Any, severity: bool = False) -> str:
 
 
 def esc(value: Any) -> str:
-    return html.escape("" if value is None else str(value))
+    return html.escape(ensure_text(value))

@@ -132,6 +132,42 @@ Disable live progress output when you want machine-readable command summaries:
 portwise scan --targets targets.txt --profile full-vapt --config config.yaml --dry-run --no-progress
 ```
 
+## Troubleshooting And Stability
+
+Check the current or last run status:
+
+```powershell
+portwise status --workspace .
+```
+
+Raw command output is written to:
+
+```text
+logs/commands/
+```
+
+UDP scanning can be slow or noisy on some networks. To skip UDP for a run:
+
+```powershell
+portwise scan --targets targets.txt --profile full-vapt --config config.yaml --execute --skip-udp
+```
+
+If a provider, module, or report format fails, PortWise records the failed or
+skipped phase and continues where it can so a partial report can still be
+generated.
+
+Useful stability switches:
+
+```powershell
+portwise scan --targets targets.txt --profile full-vapt --config config.yaml --execute --no-cve
+portwise scan --targets targets.txt --profile full-vapt --config config.yaml --execute --no-modules
+portwise scan --targets targets.txt --profile full-vapt --config config.yaml --execute --debug
+```
+
+Use `--debug` only when troubleshooting; normal mode prints concise
+human-readable errors instead of Python tracebacks. If Nmap reports permission
+issues for SYN scans, PortWise falls back to TCP connect scan where applicable.
+
 ## Profiles
 
 - `quick-triage`: fast discovery and basic routing.

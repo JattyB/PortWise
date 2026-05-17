@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+import traceback
 from pathlib import Path
 
 from portwise import __version__
@@ -19,7 +20,7 @@ from portwise.reporting.html_report import write_html_report
 from portwise.reporting.json_report import build_json_report_from_dict
 from portwise.reporting.retest import write_retest_report
 from portwise.scanners.nmap_parser import parse_nmap_xml
-from portwise.utils.files import write_json
+from portwise.utils.files import ensure_text, make_json_safe, write_json
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -30,6 +31,7 @@ def build_parser() -> argparse.ArgumentParser:
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     parser.add_argument("--verbose", action="store_true", help="Enable debug logging.")
+    parser.add_argument("--debug", action="store_true", help="Show tracebacks for unexpected runtime errors.")
     sub = parser.add_subparsers(dest="command", required=True)
 
     init_cmd = sub.add_parser("init", help="Create a PortWise workspace.")
@@ -50,6 +52,7 @@ def build_parser() -> argparse.ArgumentParser:
     scan_cmd.add_argument("--no-cve", action="store_true")
     scan_cmd.add_argument("--no-modules", action="store_true")
     scan_cmd.add_argument("--no-progress", action="store_true", help="Disable live progress output and only print the JSON command summary.")
+    scan_cmd.add_argument("--debug", action="store_true", help="Show traceback for unexpected errors.")
 
     analyze_cmd = sub.add_parser("analyze", help="Analyze existing Nmap XML.")
     analyze_cmd.add_argument("--nmap", required=True, type=Path)
@@ -60,20 +63,24 @@ def build_parser() -> argparse.ArgumentParser:
     analyze_cmd.add_argument("--testssl-json-dir", type=Path, help="Import recognizable testssl JSON findings as manual-validation evidence.")
     analyze_cmd.add_argument("--nessus-csv", type=Path, help="Import common Nessus CSV fields as non-confirmed findings.")
     analyze_cmd.add_argument("--no-cve", action="store_true")
+    analyze_cmd.add_argument("--debug", action="store_true", help="Show traceback for unexpected errors.")
 
     report_cmd = sub.add_parser("report", help="Generate report from a run JSON.")
     report_cmd.add_argument("--run", required=True, type=Path)
     report_cmd.add_argument("--format", choices=["json", "excel", "html", "all"], default="json")
     report_cmd.add_argument("--output", type=Path)
+    report_cmd.add_argument("--debug", action="store_true", help="Show traceback for unexpected errors.")
 
     retest_cmd = sub.add_parser("retest", help="Compare previous and current run JSON files.")
     retest_cmd.add_argument("--previous", required=True, type=Path)
     retest_cmd.add_argument("--current", required=True, type=Path)
     retest_cmd.add_argument("--format", choices=["json", "excel", "all"], default="json")
     retest_cmd.add_argument("--output-dir", type=Path, default=Path("reports"))
+    retest_cmd.add_argument("--debug", action="store_true", help="Show traceback for unexpected errors.")
 
     status_cmd = sub.add_parser("status", help="Show current or last PortWise run progress.")
     status_cmd.add_argument("--workspace", type=Path, default=Path("."))
+    status_cmd.add_argument("--debug", action="store_true", help="Show traceback for unexpected errors.")
 
     sub.add_parser("modules", help="List available safe modules.")
 
@@ -151,7 +158,7 @@ def main(argv: list[str] | None = None) -> int:
                 ],
             }
             if args.no_progress:
-                print(json.dumps(summary, indent=2))
+                print(json.dumps(make_json_safe(summary), indent=2))
             else:
                 _print_scan_summary(run, state)
             return 0
@@ -197,22 +204,34 @@ def main(argv: list[str] | None = None) -> int:
             output_dir = Path("reports")
             written: list[str] = []
             update_progress_file_phase(Path("."), "Report generation", PHASE_RUNNING, f"Generating {args.format} report output")
+            report_errors: list[str] = []
             if args.format in {"json", "all"}:
                 default_json = output_dir / ("sample_report.json" if "examples" in str(args.run) else "PortWise_Report.json")
                 output = args.output if args.format == "json" and args.output else default_json
-                write_json(output, report)
-                written.append(str(output))
+                try:
+                    write_json(output, report)
+                    written.append(str(output))
+                except Exception as exc:
+                    report_errors.append(f"json: {ensure_text(exc)}")
             if args.format in {"excel", "all"}:
                 output = args.output if args.format == "excel" and args.output else output_dir / "PortWise_Report.xlsx"
-                write_excel_report(report, output)
-                written.append(str(output))
+                try:
+                    write_excel_report(report, output)
+                    written.append(str(output))
+                except Exception as exc:
+                    report_errors.append(f"excel: {ensure_text(exc)}")
             if args.format in {"html", "all"}:
                 output = args.output if args.format == "html" and args.output else output_dir / "PortWise_Report.html"
-                write_html_report(report, output)
-                written.append(str(output))
-            update_progress_file_phase(Path("."), "Report generation", PHASE_DONE, f"Wrote {len(written)} report file(s)")
-            print(json.dumps({"written": written}, indent=2))
-            return 0
+                try:
+                    write_html_report(report, output)
+                    written.append(str(output))
+                except Exception as exc:
+                    report_errors.append(f"html: {ensure_text(exc)}")
+            status = PHASE_DONE if written and not report_errors else PHASE_FAILED
+            message = f"Wrote {len(written)} report file(s)" + (f"; errors: {'; '.join(report_errors)}" if report_errors else "")
+            update_progress_file_phase(Path("."), "Report generation", status, message)
+            print(json.dumps(make_json_safe({"written": written, "errors": report_errors}), indent=2))
+            return 0 if written else 1
 
         if args.command == "retest":
             written = write_retest_report(args.previous, args.current, args.output_dir, args.format)
@@ -233,7 +252,7 @@ def main(argv: list[str] | None = None) -> int:
                 }
                 for module in available_modules()
             ]
-            print(json.dumps(rows, indent=2))
+            print(json.dumps(make_json_safe(rows), indent=2))
             return 0
 
     except ConfigError as exc:
@@ -242,10 +261,13 @@ def main(argv: list[str] | None = None) -> int:
     except Exception as exc:
         if getattr(args, "command", None) == "report":
             try:
-                update_progress_file_phase(Path("."), "Report generation", PHASE_FAILED, str(exc))
+                update_progress_file_phase(Path("."), "Report generation", PHASE_FAILED, ensure_text(exc))
             except Exception:
                 pass
-        print(f"PortWise error: {exc}", file=sys.stderr)
+        if getattr(args, "debug", False):
+            traceback.print_exc()
+        else:
+            print(f"PortWise error: {ensure_text(exc)}", file=sys.stderr)
         return 1
 
     parser.print_help()
