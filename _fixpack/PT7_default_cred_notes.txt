@@ -1,0 +1,100 @@
+PORTWISE PT7 — DEFAULT-CREDENTIAL MANUAL-VERIFICATION NOTES (NON-AUTH)
+======================================================================
+
+USAGE: Claude Code in C:\Users\ADMIN\Codex\Portwise\PortWise
+  /model claude-sonnet-4-6
+  Read the file PT7_default_cred_notes.txt and follow all instructions. TDD. Plan first.
+
+NO LLM/API. Pure Python. CRITICAL: PortWise NEVER attempts credentials. This
+pack adds INFORMATIONAL NOTES telling the tester which default creds to verify
+MANUALLY. No authentication, no login attempts, no brute force — ever.
+Suite green + ruff clean.
+
+------------------------------------------------------------
+WHY THIS MATTERS / THE DESIGN DECISION
+------------------------------------------------------------
+A large share of real infra findings are "default credentials on <thing>".
+But actually ATTEMPTING credentials would turn PortWise from a safe-by-default
+enumeration tool into an authentication-attack tool — a different risk and
+legal class, and the wrong signal for a public tool under your real name.
+
+DECISION (yours): PortWise will NOT attempt default creds. Instead, when it
+identifies a service/panel that commonly ships with default credentials, it
+emits a clear MANUAL-VERIFICATION note listing the known defaults so the tester
+can check them by hand under proper authorization. This keeps the responsible,
+safe-by-default story intact while still surfacing the lead.
+
+------------------------------------------------------------
+WHAT TO BUILD
+------------------------------------------------------------
+
+STEP 1 — Default-credential knowledge base.
+New file: portwise/intelligence/default_creds.py
+  - A dict mapping product/service -> known default credential pairs +
+    where they apply, e.g.:
+       "tomcat-manager": [("tomcat","tomcat"), ("admin","admin")]
+       "jenkins": [("admin","admin")]  (+ note about initialAdminPassword file)
+       "grafana": [("admin","admin")]
+       "phpmyadmin": [("root","")]
+       "default-router/idrac/ilo/printer": vendor defaults
+       "mysql": [("root","")]  "postgres": [("postgres","postgres")]
+       "mongodb": [(no auth by default)]  "redis": [(no auth by default)]
+       "rabbitmq": [("guest","guest")]   "portainer": [(set on first use)]
+       "elasticsearch": [(no auth in old versions)]
+       "snmp": ["public","private"]  (already actively+safely checked elsewhere)
+  - Each entry: product, list of (user, pass) or notes, references, and a
+    risk note. Keep it a reviewable table with citations to vendor docs / known
+    default-credential references.
+
+STEP 2 — Emit manual-verification notes (NOT attempts).
+  - When a module identifies a product that has an entry in default_creds.py
+    (e.g. PT6 detects Tomcat Manager, devops module detects Grafana, page
+    detection finds phpMyAdmin), attach an additional finding:
+       Title: "Default Credentials Should Be Manually Verified — {product}"
+       Severity: LOW by default; MEDIUM if the panel is an unauthenticated-
+                 sensitive management interface that's reachable.
+       Category: best_practice (it's a recommendation/lead, not a confirmed vuln)
+       Confidence: INFORMATIONAL
+       manual_validation: True
+       Description: "{product} commonly ships with default credentials
+                    ({list}). PortWise does not attempt authentication. Manually
+                    verify these under authorization and rotate if valid."
+       References: from default_creds.py
+  - These notes ONLY attach to a service PortWise actually detected — never
+    speculative. No note without a corroborated product detection.
+
+STEP 3 — Hard guardrails (enforce in code + tests).
+  - There must be NO code path that sends a username/password to any service.
+    Add a module-level constant ATTEMPTS_AUTH = False and a test that greps the
+    codebase to assert no login/auth attempt functions exist in this module.
+  - The notes feature is always safe to run (it's just informational), so it's
+    enabled at all validation levels, but it must clearly state PortWise did
+    NOT test the credentials.
+
+STEP 4 — Report integration.
+  - In the pentest report (PT2), group these under a "Manual Verification
+    Required" subsection within best-practice/hardening, clearly separated from
+    confirmed findings, with the credential list and references.
+
+------------------------------------------------------------
+TESTS (TDD)
+------------------------------------------------------------
+  - test_default_cred_note_attached_when_product_detected
+  - test_no_note_without_product_detection
+  - test_note_is_informational_best_practice_not_confirmed_vuln
+  - test_module_never_attempts_auth (assert ATTEMPTS_AUTH is False AND no
+    function in default_creds.py opens a socket / calls login)
+  - test_unauth_sensitive_panel_note_is_medium
+  - test_references_present_for_each_kb_entry
+
+------------------------------------------------------------
+ACCEPTANCE
+------------------------------------------------------------
+- PortWise surfaces default-credential LEADS as manual-verification notes.
+- PortWise NEVER attempts any credential (provable by test).
+- Notes only attach to genuinely detected products, with references.
+- Clearly separated in the report as "manual verification required".
+- Suite green; ruff clean. Show a sample note attached to a detected Tomcat
+  Manager / Grafana fixture.
+
+STOP after the plan. Wait for confirmation.

@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "portwise"
-version = "0.1.0"
+version = "0.2.0"
 description = "Safe, evidence-first VAPT intelligence and reporting toolkit."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -17,6 +17,7 @@ authors = [
 dependencies = [
   "PyYAML>=6.0",
   "openpyxl>=3.1",
+  "packaging>=23.0",
   "requests>=2.31",
   "rich>=13.0",
 ]

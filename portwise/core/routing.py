@@ -35,6 +35,29 @@ K8S_HINTS = ("kubernetes", "kubelet", "docker api", "etcd", "docker registry", "
 VPN_HINTS = ("fortinet", "fortigate", "fortiweb", "fortianalyzer", "palo alto", "globalprotect", "cisco asa", "cisco ftd", "citrix adc", "citrix gateway", "netscaler", "f5", "big-ip", "pulse", "ivanti", "sonicwall", "sophos", "check point", "zyxel", "vmware horizon", "uag", "zscaler", "zpa", "akamai")
 MAIL_HINTS = ("smtp", "imap", "pop3", "submission", "smtps", "imaps", "pop3s", "postfix", "exim", "dovecot", "sendmail")
 
+# Port-based fallbacks: nmap often labels alt ports with default names that are
+# not real service fingerprints (e.g. Cloudflare's 2052/2082 as "clearvisn",
+# 5000 as "upnp"). Without these, web/TLS/data checks never ran on those ports.
+HTTP_PORTS = {
+    80, 81, 88, 280, 591, 593, 2052, 2082, 2086, 2095, 3000, 3128, 3333,
+    5000, 5104, 5800, 7000, 7001, 8000, 8001, 8008, 8042, 8060, 8069, 8080,
+    8081, 8083, 8088, 8090, 8091, 8095, 8118, 8123, 8222, 8280, 8281, 8333,
+    8500, 8800, 8880, 8888, 8983, 9000, 9001, 9080, 9090, 9091, 9999, 16080,
+}
+HTTPS_PORTS = {
+    443, 832, 981, 1311, 2053, 2083, 2087, 2096, 4443, 4444, 5443, 7443,
+    8443, 8834, 9443, 10443, 12443, 16443, 18443,
+}
+# port -> database/cache hint used both for routing and probe selection
+DB_PORT_HINTS = {
+    3306: "mysql", 5432: "postgresql", 1433: "mssql", 1521: "oracle",
+    27017: "mongodb", 27018: "mongodb", 6379: "redis", 11211: "memcached",
+    9200: "elasticsearch", 9300: "elasticsearch", 5984: "couchdb",
+    8983: "solr", 2379: "etcd", 7474: "neo4j", 8086: "influxdb", 9042: "cassandra",
+}
+# Docker / container management ports
+DOCKER_PORTS = {2375, 2376}
+
 
 def route_assets(assets: list[Asset], *, probe_tls: bool = False) -> dict[str, list[ModuleTarget]]:
     routes: dict[str, list[ModuleTarget]] = {key: [] for key in ROUTE_KEYS}
@@ -77,21 +100,25 @@ def module_target_counts(routes: dict[str, list[ModuleTarget]]) -> dict[str, int
 def _route_service(service: Service, tls_engine: TlsEngine | None) -> list[tuple[str, str]]:
     text = _fingerprint(service)
     routes: list[tuple[str, str]] = []
+    port = service.port
+    tcp = service.protocol == "tcp"
 
-    _add_if(routes, "http_targets", any(hint in text for hint in HTTP_HINTS), "HTTP/web fingerprint matched.")
-    _add_if(routes, "tls_targets", _is_tls(service, text, tls_engine), "TLS tunnel/fingerprint/handshake matched.")
+    web_port = tcp and (port in HTTP_PORTS or port in HTTPS_PORTS)
+    _add_if(routes, "http_targets", any(hint in text for hint in HTTP_HINTS) or web_port, "HTTP/web fingerprint or common web port matched.")
+    _add_if(routes, "tls_targets", _is_tls(service, text, tls_engine) or (tcp and port in HTTPS_PORTS), "TLS tunnel/fingerprint/handshake or HTTPS port matched.")
     _add_if(routes, "smb_targets", any(hint in text for hint in ("microsoft-ds", "netbios-ssn", "smb", "samba")) or service.port in {139, 445}, "SMB fingerprint or fallback port matched.")
-    _add_if(routes, "ssh_targets", "ssh" in text, "SSH fingerprint matched.")
+    _add_if(routes, "ssh_targets", "ssh" in text or port == 22, "SSH fingerprint or port 22 matched.")
     _add_if(routes, "rdp_targets", any(hint in text for hint in ("ms-wbt-server", "rdp", "terminal service")) or service.port == 3389, "RDP fingerprint or fallback port matched.")
     _add_if(routes, "winrm_targets", "winrm" in text or service.port in {5985, 5986}, "WinRM fingerprint or fallback port matched.")
-    _add_if(routes, "ftp_targets", "ftp" in text, "FTP fingerprint matched.")
+    _add_if(routes, "ftp_targets", "ftp" in text or port == 21, "FTP fingerprint or port 21 matched.")
     _add_if(routes, "snmp_targets", "snmp" in text or (service.protocol == "udp" and service.port == 161), "SNMP fingerprint or UDP 161 fallback matched.")
     _add_if(routes, "dns_targets", "domain" in text or "dns" in text or service.port == 53, "DNS fingerprint or port fallback matched.")
     _add_if(routes, "ntp_targets", "ntp" in text or (service.protocol == "udp" and service.port == 123), "NTP fingerprint or UDP 123 fallback matched.")
-    _add_if(routes, "database_targets", any(hint in text for hint in DB_HINTS), "Database fingerprint matched.")
+    db_port = tcp and port in DB_PORT_HINTS
+    _add_if(routes, "database_targets", any(hint in text for hint in DB_HINTS) or db_port, "Database fingerprint or well-known DB port matched.")
     _add_if(routes, "devops_targets", any(hint in text for hint in DEVOPS_HINTS), "DevOps/admin fingerprint matched.")
-    _add_if(routes, "kubernetes_targets", any(hint in text for hint in K8S_HINTS), "Kubernetes/container fingerprint matched.")
-    _add_if(routes, "mail_targets", any(hint in text for hint in MAIL_HINTS), "Mail service fingerprint matched.")
+    _add_if(routes, "kubernetes_targets", any(hint in text for hint in K8S_HINTS) or (tcp and port in DOCKER_PORTS), "Kubernetes/container fingerprint or Docker port matched.")
+    _add_if(routes, "mail_targets", any(hint in text for hint in MAIL_HINTS) or port in {25, 110, 143, 587, 993, 995}, "Mail service fingerprint or port matched.")
     _add_if(routes, "vpn_appliance_targets", any(hint in text for hint in VPN_HINTS), "VPN/security appliance fingerprint matched.")
     return routes
 
@@ -107,10 +134,14 @@ def _target(service: Service, reason: str) -> ModuleTarget:
         cpe=service.cpes,
         confidence=service.confidence,
         routing_reason=reason,
+        scripts=service.scripts,
     )
 
 
 def _fingerprint(service: Service) -> str:
+    script_texts = []
+    for v in service.scripts.values():
+        script_texts.append(v.get("output", "") if isinstance(v, dict) else str(v))
     return " ".join([
         service.service_name,
         service.product,
@@ -118,7 +149,7 @@ def _fingerprint(service: Service) -> str:
         service.extrainfo,
         service.tunnel or "",
         " ".join(service.cpes),
-        " ".join(service.scripts.values()),
+        " ".join(script_texts),
     ]).lower()
 
 

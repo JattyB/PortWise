@@ -1,0 +1,101 @@
+PORTWISE PT6 — PROTOCOL MODULE DEPTH (SMB / SSH / SNMP / RDP / DB)
+==================================================================
+
+USAGE: Claude Code in C:\Users\ADMIN\Codex\Portwise\PortWise
+  /model claude-sonnet-4-6
+  Read the file PT6_module_depth.txt and follow all instructions. TDD. Plan first.
+  DEPENDS ON PT1 (NSE parser).
+
+NO LLM/API. Pure Python. Safe (no auth, no brute force). Suite green + ruff clean.
+
+------------------------------------------------------------
+WHY THIS MATTERS
+------------------------------------------------------------
+The protocol modules currently emit shallow, mostly single-line findings
+("SMB Service Exposed", "RDP Service Exposed"). A real infra PT report needs
+the SPECIFIC weaknesses per protocol. PT1 gave us structured NSE data — this
+pack uses it (plus a few safe native probes) to make each module produce
+report-worthy depth.
+
+------------------------------------------------------------
+WHAT TO BUILD (per protocol)
+------------------------------------------------------------
+
+SMB (modules/smb/smb_engine.py + registry SmbSafeModule):
+  Using nse_smb_security() + nse_smb_os() + nse_smb2_security:
+   - SMBv1 enabled -> HIGH vulnerability (CONFIRMED from NSE)
+   - SMB signing not required -> MEDIUM vulnerability (NTLM relay exposure note)
+   - Specific dialects supported (list them) -> information
+   - OS / domain / computer name / FQDN disclosure -> LOW information (asset
+     inventory value)
+   - Null-session indicator IF nmap smb-enum-shares/sessions ran (parse it;
+     do NOT attempt a null session natively) -> report as MEDIUM with
+     manual_validation note.
+   - Add remediation refs (disable SMBv1, require signing).
+
+SSH (registry SshSafeModule):
+  Using nse_ssh_algos():
+   - Weak KEX (diffie-hellman-group1-sha1, group14-sha1, gss-*) -> MEDIUM
+   - Weak ciphers (3des-cbc, arcfour, *-cbc) -> MEDIUM
+   - Weak MACs (hmac-md5, hmac-sha1-96, umac-64) -> LOW/MEDIUM
+   - Deprecated host key types (ssh-dss) -> MEDIUM
+   - Keep legacy-version detection but base it on parsed version, not substring.
+   - All as vulnerability/best_practice per fix #1; evidence lists the exact
+     weak algorithms.
+
+SNMP (registry SnmpSafeModule):
+  - Keep the safe default-community check (already good).
+  - If community works, parse the sysDescr for OS/device model and report
+    "SNMP System Information Disclosure" with the parsed details (asset value).
+  - Detect SNMP v3 vs v1/v2c from nmap/banner; recommend v3.
+  - NEVER walk the full MIB; single safe GET only (as today).
+
+RDP (registry RdpSafeModule):
+  Using nse_rdp_ntlm() + rdp-enum-encryption if present:
+   - NLA disabled -> HIGH (CONFIRMED from NSE) with remediation
+   - Weak RDP encryption level / RDP Security Layer (not TLS) -> MEDIUM
+   - Disclosed domain/hostname/product version from NTLM info -> LOW information
+   - CredSSP/older protocol indicators -> note for manual check
+
+DATABASES (registry DatabaseSafeModule + _database_safe_probe):
+  - Redis: detect unauthenticated access indicator via a safe PING/INFO-style
+    probe IF the existing safe probe already does this; report
+    "Unauthenticated Redis Access" HIGH if INFO returns without auth.
+    (Use ONLY the safe read probe already present; do not add data dumping.)
+  - MongoDB: unauthenticated indicator (isMaster/buildInfo without auth) -> HIGH.
+  - Elasticsearch: GET / or /_cluster/health 200 without auth -> HIGH.
+  - MySQL/MSSQL/Postgres: parse nmap mysql-info/ms-sql-info/pgsql for version +
+    auth info; report version + any anonymous/blank-auth INDICATOR (manual
+    validation, never an actual login attempt).
+  - Memcached: already HIGH; add "stats" safe read indicator if present.
+
+GENERAL:
+  - Every new finding sets category (fix #1), module tag, evidence transcript
+    (PT5 if merged), and a remediation entry (PT2 remediation.py — add any
+    missing types there).
+  - Confidence: NSE-backed = CONFIRMED/LIKELY; native safe probe success =
+    CONFIRMED; banner/version inference = POSSIBLE + manual_validation.
+
+------------------------------------------------------------
+TESTS (TDD — canned NSE XML + mocked probes)
+------------------------------------------------------------
+  - test_smb_signing_not_required_medium_with_relay_note
+  - test_smbv1_high_confirmed
+  - test_ssh_weak_kex_and_cipher_and_mac_reported
+  - test_ssh_dss_hostkey_flagged
+  - test_snmp_sysdescr_parsed_for_asset_info
+  - test_rdp_nla_disabled_high
+  - test_redis_unauth_indicator_high
+  - test_elasticsearch_unauth_root_high
+  - test_db_version_inference_is_possible_manual
+
+------------------------------------------------------------
+ACCEPTANCE
+------------------------------------------------------------
+- Each protocol module produces specific, report-worthy findings, not one-liners.
+- Findings are NSE-backed where possible (high confidence), safe-probe otherwise.
+- No auth attempts, no brute force, no data dumping — indicators + safe reads only.
+- Every finding has category + module + remediation.
+- Suite green; ruff clean. Show before/after on SMB + SSH + a DB fixture.
+
+STOP after the plan. Wait for confirmation.

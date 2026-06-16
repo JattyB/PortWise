@@ -95,7 +95,7 @@ def test_udp_phase_bytes_regression_does_not_crash(monkeypatch, tmp_path: Path) 
     config = load_config(tmp_path / "config.yaml")
     progress = ProgressTracker(workspace=tmp_path, profile="full-vapt", phases=default_scan_phases(config.get_profile("full-vapt").nmap_steps), enabled=False)
 
-    run = run_scan(tmp_path, config, config.get_profile("full-vapt"), tmp_path / "targets.txt", dry_run=False, no_modules=True, no_cve=True, progress=progress)
+    run_scan(tmp_path, config, config.get_profile("full-vapt"), tmp_path / "targets.txt", dry_run=False, no_modules=True, no_cve=True, progress=progress)
 
     latest = json.loads((tmp_path / "runs" / "latest.json").read_text(encoding="utf-8"))
     progress_data = load_progress(tmp_path)

@@ -45,4 +45,4 @@ def test_nmap_parser_inline_sample(tmp_path) -> None:
     assert service.port == 443
     assert service.product == "nginx"
     assert service.cpes == ["cpe:/a:nginx:nginx:1.24.0"]
-    assert service.scripts["ssl-cert"] == "subject=example"
+    assert service.scripts["ssl-cert"]["output"] == "subject=example"

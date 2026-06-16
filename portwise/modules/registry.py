@@ -1,23 +1,42 @@
 from __future__ import annotations
 
 import ftplib
-import json
 import socket
 import ssl
 import struct
 from http.client import HTTPConnection, HTTPSConnection
 from typing import Any
 
-from portwise.core.models import Confidence, Evidence, Finding, Severity
+from portwise.core.models import Confidence, Evidence, Finding, FindingCategory, Severity
+from portwise.intelligence.default_creds import lookup_default_creds
 from portwise.modules.base import PortWiseModule
 from portwise.modules.http.http_engine import HttpEngine
 from portwise.modules.results import ModuleResult
 from portwise.modules.tls.tls_engine import TlsEngine
+from portwise.scanners.nse import (
+    nse_dns_recursion,
+    nse_ftp_anon,
+    nse_rdp_ntlm,
+    nse_smb_os,
+    nse_smb_security,
+    nse_snmp_info,
+    nse_ssh_algos,
+)
+from portwise.scanners.smb_native import probe_smb
+from portwise.scanners.ssh_algos import enumerate_ssh_algorithms
+from portwise.utils.http_client import PoliteHttpClient, client_from_config
+
+_BROWSER_UA = (
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+    "AppleWebKit/537.36 (KHTML, like Gecko) "
+    "Chrome/124.0.0.0 Safari/537.36"
+)
 
 
 def available_modules() -> list[PortWiseModule]:
     return [
         ExposureModule(),
+        PlaintextProtocolModule(),
         TlsModule(),
         HttpModule(),
         SmbSafeModule(),
@@ -43,6 +62,7 @@ def module_map() -> dict[str, PortWiseModule]:
 def module_targets_key(module_name: str) -> str:
     return {
         "exposure": "all_services",
+        "plaintext": "all_services",
         "tls": "tls_targets",
         "http": "http_targets",
         "smb": "smb_targets",
@@ -76,6 +96,7 @@ class FindingFactory:
         type_: str = "Risk Indicator",
         false_positive_risk: str = "medium",
         manual_validation: bool = True,
+        category: FindingCategory = FindingCategory.VULNERABILITY,
     ) -> Finding:
         return Finding(
             title=title,
@@ -93,6 +114,7 @@ class FindingFactory:
             false_positive_risk=false_positive_risk,
             manual_validation=manual_validation,
             evidence=[evidence],
+            category=category,
         )
 
 
@@ -137,7 +159,7 @@ def _http_request(host: str, port: int, path: str, timeout: float, tls: bool | N
             if use_tls:
                 kwargs["context"] = ssl.create_default_context()
             conn = conn_cls(host, port=port, **kwargs)
-            conn.request("GET", path, headers={"User-Agent": "PortWise/0.1 safe-validation"})
+            conn.request("GET", path, headers={"User-Agent": _BROWSER_UA})
             response = conn.getresponse()
             body = response.read(4096).decode("utf-8", errors="replace")
             headers = {k.lower(): v for k, v in response.getheaders()}
@@ -178,8 +200,13 @@ class TlsModule(PortWiseModule):
             version=str(target.get("version", "")),
             cpes=list(target.get("cpe", []) or []),
             tunnel="ssl",
+            scripts=dict(target.get("scripts") or {}),
         )
-        engine = TlsEngine(timeout=float(config.get("timeout", 5)), expiring_days=int(config.get("tls_expiry_days", 30)))
+        engine = TlsEngine(
+            timeout=float(config.get("timeout", 5)),
+            expiring_days=int(config.get("tls_expiry_days", 30)),
+            http_client=client_from_config(config),
+        )
         findings = engine.run(service)
         for finding in findings:
             finding.module = self.name
@@ -204,9 +231,14 @@ class HttpModule(PortWiseModule):
             version=str(target.get("version", "")),
             cpes=list(target.get("cpe", []) or []),
             tunnel="ssl" if "tls" in str(target.get("routing_reason", "")).lower() or "https" in str(target.get("service", "")).lower() else None,
+            scripts=dict(target.get("scripts") or {}),
         )
-        engine = HttpEngine(timeout=float(config.get("timeout", 5)), paths=tuple(config.get("http_paths", []) or ()))
-        findings = engine.run(service)
+        engine = HttpEngine(
+            timeout=float(config.get("timeout", 5)),
+            paths=tuple(config.get("http_paths", []) or ()),
+            client=client_from_config(config),
+        )
+        findings = engine.run(service, config=config)
         for finding in findings:
             finding.module = self.name
         return ModuleResult(self.name, target, findings=findings, evidence=[e for f in findings for e in f.evidence])
@@ -277,23 +309,149 @@ class ExposureModule(PortWiseModule):
         return ModuleResult(self.name, target, findings=findings, evidence=[e for f in findings for e in f.evidence])
 
 
+# Protocols that transmit credentials/data without transport encryption.
+# (severity, what's exposed, whether opportunistic TLS upgrade is common)
+_PLAINTEXT_PORTS: dict[int, tuple[str, Severity, str, bool]] = {
+    21:   ("FTP",    Severity.MEDIUM, "credentials and file data", False),
+    23:   ("Telnet", Severity.HIGH,   "credentials, keystrokes and session data", False),
+    25:   ("SMTP",   Severity.LOW,    "mail content and AUTH credentials", True),
+    80:   ("HTTP",   Severity.LOW,    "request/response data and any submitted credentials", True),
+    110:  ("POP3",   Severity.MEDIUM, "mailbox credentials and message content", True),
+    143:  ("IMAP",   Severity.MEDIUM, "mailbox credentials and message content", True),
+    389:  ("LDAP",   Severity.MEDIUM, "directory bind credentials and queries", True),
+    512:  ("rexec",  Severity.HIGH,   "credentials and command output (legacy r-service)", False),
+    513:  ("rlogin", Severity.HIGH,   "credentials and session data (legacy r-service)", False),
+    514:  ("rsh",    Severity.HIGH,   "commands and output with host-based trust (legacy r-service)", False),
+    79:   ("Finger", Severity.LOW,    "user and system information", False),
+    1521: ("Oracle TNS", Severity.LOW, "database traffic (encryption is configuration-dependent)", False),
+    3306: ("MySQL",  Severity.LOW,    "database traffic (TLS is configuration-dependent)", False),
+    5432: ("PostgreSQL", Severity.LOW, "database traffic (TLS is configuration-dependent)", False),
+    5900: ("VNC",    Severity.MEDIUM, "screen contents and input (often weak/no encryption)", False),
+}
+
+_PLAINTEXT_UDP_PORTS: dict[int, tuple[str, Severity, str, bool]] = {
+    69:  ("TFTP", Severity.MEDIUM, "files with no authentication or encryption", False),
+    161: ("SNMP", Severity.MEDIUM, "device metadata via community strings (v1/v2c)", False),
+}
+
+_PLAINTEXT_SERVICE_HINTS = {
+    "telnet": (23, "Telnet"),
+    "ftp": (21, "FTP"),
+    "rlogin": (513, "rlogin"),
+    "rsh": (514, "rsh"),
+    "rexec": (512, "rexec"),
+    "finger": (79, "Finger"),
+    "vnc": (5900, "VNC"),
+    "tftp": (69, "TFTP"),
+}
+
+
+class PlaintextProtocolModule(PortWiseModule):
+    name = "plaintext"
+    description = "Flags services that carry credentials/data without transport encryption."
+    supported_target_types = ("all_services",)
+
+    def run(self, target: dict[str, Any], config: dict[str, Any]) -> ModuleResult:
+        port = int(target.get("port", 0) or 0)
+        protocol = str(target.get("protocol", "tcp")).lower()
+        service = str(target.get("service", "")).lower()
+        text = target_text(target)
+
+        # A TLS tunnel means the transport is encrypted — never flag those.
+        tunnel = str(target.get("tunnel", "")).lower()
+        if tunnel == "ssl" or service.startswith("ssl/") or service.endswith("s") and service in {"https", "ftps", "imaps", "pop3s", "smtps", "ldaps"}:
+            return ModuleResult(self.name, target, findings=[], evidence=[])
+        if "ssl/" in text or "https" in service:
+            return ModuleResult(self.name, target, findings=[], evidence=[])
+
+        table = _PLAINTEXT_UDP_PORTS if protocol == "udp" else _PLAINTEXT_PORTS
+        entry = table.get(port)
+
+        # Service-name match (covers non-standard ports).
+        if entry is None:
+            for hint, (canon_port, _label) in _PLAINTEXT_SERVICE_HINTS.items():
+                if hint in service:
+                    entry = _PLAINTEXT_PORTS.get(canon_port) or _PLAINTEXT_UDP_PORTS.get(canon_port)
+                    break
+
+        if entry is None:
+            return ModuleResult(self.name, target, findings=[], evidence=[])
+
+        label, severity, exposes, opportunistic = entry
+        context = str(config.get("context", "unknown"))
+        internet = bool(config.get("internet_facing", False))
+        if (context == "external" or internet) and severity == Severity.LOW:
+            severity = Severity.MEDIUM
+
+        if opportunistic:
+            description = (
+                f"{label} on {protocol}/{port} can carry {exposes} in cleartext. "
+                f"This protocol commonly supports opportunistic TLS (e.g. STARTTLS); confirm "
+                f"whether encryption is enforced or whether cleartext sessions are still permitted."
+            )
+            confidence = Confidence.NEEDS_MANUAL_VALIDATION
+            manual = True
+            category = FindingCategory.BEST_PRACTICE
+            strength = 2
+        else:
+            description = (
+                f"{label} on {protocol}/{port} transmits {exposes} without transport encryption. "
+                f"Traffic can be intercepted or modified by anyone on the path."
+            )
+            confidence = Confidence.CONFIRMED
+            manual = False
+            category = FindingCategory.VULNERABILITY
+            strength = 4
+
+        finding = _simple_finding(
+            self.name, target,
+            f"Cleartext Protocol Exposed — {label}",
+            severity, description,
+            strength=strength, confidence=confidence, manual=manual, category=category,
+        )
+        finding.tags.append("plaintext-protocol")
+        finding.recommendation = (
+            f"Disable cleartext access and require an encrypted equivalent "
+            f"(e.g. SSH/SFTP instead of Telnet/FTP, HTTPS instead of HTTP, "
+            f"LDAPS/STARTTLS instead of plain LDAP). Restrict the port to trusted networks."
+        )
+        return ModuleResult(self.name, target, findings=[finding], evidence=finding.evidence)
+
+
 class FtpSafeModule(PortWiseModule):
     name = "ftp"
     description = "FTP cleartext exposure and anonymous-login check."
     supported_target_types = ("ftp_targets",)
 
     def run(self, target: dict[str, Any], config: dict[str, Any]) -> ModuleResult:
-        findings = [_simple_finding(self.name, target, "FTP Cleartext Service Exposed", Severity.MEDIUM, "FTP transmits credentials and data without transport encryption.")]
+        findings = [_simple_finding(self.name, target, "FTP Cleartext Service Exposed", Severity.MEDIUM, "FTP transmits credentials and data without transport encryption.", confidence=Confidence.INFORMATIONAL, category=FindingCategory.INFORMATION)]
+        nse_anon = nse_ftp_anon(target)
+        native_anon = False
         if bool(config.get("ftp_anonymous_check", True)):
-            try:
-                ftp = ftplib.FTP()
-                ftp.connect(str(target["host"]), int(target["port"]), timeout=float(config.get("timeout", 5)))
-                ftp.login("anonymous", "anonymous@")
-                ftp.quit()
-                findings.append(_simple_finding(self.name, target, "Anonymous FTP Login Enabled", Severity.HIGH, "Anonymous FTP login was accepted.", strength=5, confidence=Confidence.CONFIRMED, manual=False))
-            except Exception:
-                pass
+            client = client_from_config(config)
+            host = str(target["host"])
+            if not client.is_tripped(host):
+                client.throttle(host)
+                try:
+                    ftp = ftplib.FTP()
+                    ftp.connect(host, int(target["port"]), timeout=float(config.get("timeout", 5)))
+                    ftp.login("anonymous", "anonymous@")
+                    ftp.quit()
+                    native_anon = True
+                except Exception:
+                    pass
+        if native_anon and nse_anon:
+            findings.append(_simple_finding(self.name, target, "Anonymous FTP Login Enabled", Severity.HIGH, "Both native probe and Nmap ftp-anon confirm anonymous FTP login is accepted.", strength=5, confidence=Confidence.CONFIRMED, manual=False, category=FindingCategory.VULNERABILITY))
+        elif native_anon or nse_anon:
+            source = "Nmap ftp-anon script" if nse_anon else "Native FTP probe"
+            findings.append(_simple_finding(self.name, target, "Anonymous FTP Login Enabled", Severity.HIGH, f"{source} indicates anonymous FTP login is accepted.", strength=5, confidence=Confidence.CONFIRMED, manual=False, category=FindingCategory.VULNERABILITY))
         return ModuleResult(self.name, target, findings=findings, evidence=[e for f in findings for e in f.evidence])
+
+
+_WEAK_KEX = frozenset({"diffie-hellman-group1-sha1", "diffie-hellman-group14-sha1", "diffie-hellman-group-exchange-sha1", "rsa1024-sha1", "gss-group1-sha1-toWkFwperkl0GDisCHkwqg=="})
+_WEAK_CIPHERS = frozenset({"3des-cbc", "arcfour", "arcfour128", "arcfour256", "aes128-cbc", "aes192-cbc", "aes256-cbc", "rijndael-cbc@lysator.liu.se", "blowfish-cbc", "cast128-cbc"})
+_WEAK_MACS = frozenset({"hmac-md5", "hmac-md5-96", "hmac-sha1-96", "umac-64@openssh.com", "umac-64"})
+_WEAK_HOSTKEYS = frozenset({"ssh-dss"})
 
 
 class SshSafeModule(PortWiseModule):
@@ -302,11 +460,46 @@ class SshSafeModule(PortWiseModule):
     supported_target_types = ("ssh_targets",)
 
     def run(self, target: dict[str, Any], config: dict[str, Any]) -> ModuleResult:
-        findings = [_simple_finding(self.name, target, "SSH Service Exposed", Severity.LOW, "SSH is reachable and should be owner-approved.")]
+        findings = [_simple_finding(self.name, target, "SSH Service Exposed", Severity.LOW, "SSH is reachable and should be owner-approved.", confidence=Confidence.INFORMATIONAL, category=FindingCategory.INFORMATION)]
+        text = target_text(target)
         if target.get("version") or target.get("product"):
-            findings.append(_simple_finding(self.name, target, "SSH Version Disclosure", Severity.INFO, "SSH product/version is visible in service fingerprint."))
-        if "openssh 5" in target_text(target) or "openssh 4" in target_text(target):
-            findings.append(_simple_finding(self.name, target, "Legacy SSH Service", Severity.MEDIUM, "SSH service appears to be an old major version."))
+            findings.append(_simple_finding(self.name, target, "SSH Version Disclosure", Severity.LOW, "SSH product/version is visible in service fingerprint.", category=FindingCategory.VULNERABILITY))
+        if "openssh 5" in text or "openssh 4" in text:
+            findings.append(_simple_finding(self.name, target, "Legacy SSH Service", Severity.MEDIUM, "SSH service appears to be an old major version.", category=FindingCategory.BEST_PRACTICE))
+
+        algos = nse_ssh_algos(target)
+        algo_source = "Nmap ssh2-enum-algos"
+        if not algos and bool(config.get("ssh_algo_probe", True)):
+            client = client_from_config(config)
+            host = str(target["host"])
+            if not client.is_tripped(host):
+                client.throttle(host)
+                native = enumerate_ssh_algorithms(host, int(target.get("port", 22) or 22), _timeout(config, "ssh", 5.0))
+                if native and (native.get("kex") or native.get("encryption")):
+                    algos = {
+                        "kex": native.get("kex", []),
+                        "encryption": list(native.get("encryption", [])) + list(native.get("encryption_s2c", [])),
+                        "mac": list(native.get("mac", [])) + list(native.get("mac_s2c", [])),
+                        "hostkey": native.get("hostkey", []),
+                    }
+                    algo_source = "Native SSH KEXINIT probe"
+
+        if algos:
+            weak_kex = sorted({a for a in algos.get("kex", []) if a in _WEAK_KEX})
+            weak_enc = sorted({a for a in algos.get("encryption", []) if a in _WEAK_CIPHERS})
+            weak_mac = sorted({a for a in algos.get("mac", []) if a in _WEAK_MACS})
+            weak_key = sorted({a for a in algos.get("hostkey", []) if a in _WEAK_HOSTKEYS})
+            confirmed = algo_source.startswith("Native")
+            algo_conf = Confidence.CONFIRMED if confirmed else Confidence.LIKELY
+            if weak_kex:
+                findings.append(_simple_finding(self.name, target, "Weak SSH Key Exchange Algorithm", Severity.MEDIUM, f"Weak KEX algorithms offered ({algo_source}): {', '.join(weak_kex)}. These are susceptible to Logjam/SHA1-downgrade-class attacks.", strength=5, confidence=algo_conf, manual=not confirmed, category=FindingCategory.VULNERABILITY))
+            if weak_enc:
+                findings.append(_simple_finding(self.name, target, "Weak SSH Cipher", Severity.MEDIUM, f"Weak/legacy ciphers offered ({algo_source}): {', '.join(weak_enc)}. CBC-mode and RC4 ciphers are deprecated.", strength=5, confidence=algo_conf, manual=not confirmed, category=FindingCategory.VULNERABILITY))
+            if weak_mac:
+                findings.append(_simple_finding(self.name, target, "Weak SSH MAC Algorithm", Severity.LOW, f"Weak MAC algorithms offered ({algo_source}): {', '.join(weak_mac)}.", strength=5, confidence=algo_conf, manual=not confirmed, category=FindingCategory.BEST_PRACTICE))
+            if weak_key:
+                findings.append(_simple_finding(self.name, target, "Deprecated SSH Host Key Type", Severity.MEDIUM, f"Deprecated host key types in use ({algo_source}): {', '.join(weak_key)}. ssh-dss (DSA) is disabled in OpenSSH 7+.", strength=5, confidence=algo_conf, manual=not confirmed, category=FindingCategory.VULNERABILITY))
+
         return ModuleResult(self.name, target, findings=findings, evidence=[e for f in findings for e in f.evidence])
 
 
@@ -317,13 +510,46 @@ class SmbSafeModule(PortWiseModule):
 
     def run(self, target: dict[str, Any], config: dict[str, Any]) -> ModuleResult:
         text = target_text(target)
-        findings = [_simple_finding(self.name, target, "SMB Service Exposed", Severity.MEDIUM, "SMB is reachable and should be limited to trusted networks.")]
-        if "smbv1" in text or "nt lm 0.12" in text:
-            findings.append(_simple_finding(self.name, target, "SMBv1 Enabled", Severity.HIGH, "Nmap script evidence indicates SMBv1 may be enabled.", strength=4))
-        if "message signing disabled" in text or "signing: disabled" in text or "signing not required" in text:
-            findings.append(_simple_finding(self.name, target, "SMB Signing Not Required", Severity.MEDIUM, "SMB signing appears not required.", strength=4))
-        if "domain" in text or "workgroup" in text or "os:" in text:
-            findings.append(_simple_finding(self.name, target, "SMB OS/Domain Disclosure", Severity.LOW, "SMB script evidence discloses OS or domain metadata.", strength=4))
+        findings = [_simple_finding(self.name, target, "SMB Service Exposed", Severity.MEDIUM, "SMB is reachable and should be limited to trusted networks.", confidence=Confidence.INFORMATIONAL, category=FindingCategory.INFORMATION)]
+
+        smb_sec = nse_smb_security(target)
+        smb_os = nse_smb_os(target)
+
+        # Native fallback: if nmap NSE produced no security-mode data, perform a
+        # read-only SMB NEGOTIATE handshake to determine SMBv1 support + signing.
+        native_smb = None
+        if not smb_sec.get("smbv1") and not smb_sec.get("signing") and bool(config.get("smb_native_probe", True)):
+            client = client_from_config(config)
+            host = str(target["host"])
+            if not client.is_tripped(host):
+                client.throttle(host)
+                native_smb = probe_smb(host, int(target.get("port", 445) or 445), _timeout(config, "smb", 5.0))
+
+        # SMBv1 — NSE authoritative (strength=5/CONFIRMED), fallback to substring (strength=4/LIKELY)
+        if smb_sec.get("smbv1"):
+            findings.append(_simple_finding(self.name, target, "SMBv1 Enabled", Severity.HIGH, "Nmap smb-security-mode confirms SMBv1 is negotiated. SMBv1 is deprecated and vulnerable to EternalBlue-class attacks.", strength=5, confidence=Confidence.CONFIRMED, manual=False, category=FindingCategory.VULNERABILITY))
+        elif native_smb and native_smb.get("smbv1"):
+            findings.append(_simple_finding(self.name, target, "SMBv1 Enabled", Severity.HIGH, "Native SMB NEGOTIATE handshake confirms the legacy SMBv1 dialect (NT LM 0.12) is still accepted. SMBv1 is deprecated and vulnerable to EternalBlue-class attacks.", strength=5, confidence=Confidence.CONFIRMED, manual=False, category=FindingCategory.VULNERABILITY))
+        elif "smbv1" in text or "nt lm 0.12" in text:
+            findings.append(_simple_finding(self.name, target, "SMBv1 Enabled", Severity.HIGH, "Nmap script evidence indicates SMBv1 may be enabled.", strength=4, category=FindingCategory.VULNERABILITY))
+
+        # SMB signing — NSE authoritative, then native handshake, then substring
+        signing = smb_sec.get("signing") or (native_smb.get("signing") if native_smb else None)
+        signing_source = "Nmap smb-security-mode" if smb_sec.get("signing") else "Native SMB handshake"
+        if signing in ("not_required", "disabled"):
+            label = "disabled" if signing == "disabled" else "not required"
+            findings.append(_simple_finding(self.name, target, "SMB Signing Not Required", Severity.MEDIUM, f"SMB message signing is {label} ({signing_source}), exposing the host to NTLM relay attacks.", strength=5, confidence=Confidence.CONFIRMED, manual=False, category=FindingCategory.VULNERABILITY))
+        elif "message signing disabled" in text or "signing: disabled" in text or "signing not required" in text:
+            findings.append(_simple_finding(self.name, target, "SMB Signing Not Required", Severity.MEDIUM, "SMB signing appears not required.", strength=4, category=FindingCategory.VULNERABILITY))
+
+        # OS/domain disclosure — NSE structured data preferred
+        if smb_os:
+            os_details = ", ".join(f"{k}={v}" for k, v in smb_os.items() if k != "raw")
+            desc = f"SMB OS discovery disclosed: {os_details or smb_os.get('raw', '')}."
+            findings.append(_simple_finding(self.name, target, "SMB OS/Domain Disclosure", Severity.LOW, desc, strength=5, confidence=Confidence.CONFIRMED, manual=False, category=FindingCategory.INFORMATION))
+        elif "domain" in text or "workgroup" in text or "os:" in text:
+            findings.append(_simple_finding(self.name, target, "SMB OS/Domain Disclosure", Severity.LOW, "SMB script evidence discloses OS or domain metadata.", strength=4, category=FindingCategory.INFORMATION))
+
         return ModuleResult(self.name, target, findings=findings, evidence=[e for f in findings for e in f.evidence])
 
 
@@ -333,9 +559,26 @@ class RdpSafeModule(PortWiseModule):
     supported_target_types = ("rdp_targets",)
 
     def run(self, target: dict[str, Any], config: dict[str, Any]) -> ModuleResult:
-        findings = [_simple_finding(self.name, target, "RDP Service Exposed", Severity.MEDIUM, "RDP is reachable and should be restricted.")]
-        if "nla: disabled" in target_text(target):
-            findings.append(_simple_finding(self.name, target, "RDP NLA Disabled", Severity.HIGH, "Nmap script evidence indicates NLA is disabled.", strength=4))
+        findings = [_simple_finding(self.name, target, "RDP Service Exposed", Severity.MEDIUM, "RDP is reachable and should be restricted.", confidence=Confidence.INFORMATIONAL, category=FindingCategory.INFORMATION)]
+
+        rdp_info = nse_rdp_ntlm(target)
+        nla_status = rdp_info.get("nla", "")
+
+        if nla_status == "disabled":
+            findings.append(_simple_finding(self.name, target, "RDP NLA Disabled", Severity.HIGH, "Nmap confirms Network Level Authentication (NLA) is disabled. Unauthenticated connection phase exposes the host to credential harvesting.", strength=5, confidence=Confidence.CONFIRMED, manual=False, category=FindingCategory.VULNERABILITY))
+        elif "nla: disabled" in target_text(target):
+            findings.append(_simple_finding(self.name, target, "RDP NLA Disabled", Severity.HIGH, "Nmap script evidence indicates NLA is disabled.", strength=4, category=FindingCategory.VULNERABILITY))
+
+        # Weak RDP encryption / security layer from rdp-enum-encryption
+        enc_level = rdp_info.get("encryption_level", rdp_info.get("security_layer", ""))
+        if enc_level and "rdp" in enc_level.lower():
+            findings.append(_simple_finding(self.name, target, "Weak RDP Security Layer", Severity.MEDIUM, f"RDP using legacy RDP Security Layer (not CredSSP/TLS): {enc_level}.", strength=4, confidence=Confidence.LIKELY, manual=False, category=FindingCategory.VULNERABILITY))
+
+        # Domain/hostname/version disclosure from NTLM info
+        disclosed = [v for k, v in rdp_info.items() if k in ("target_name", "dns_domain_name", "product_version") and v]
+        if disclosed:
+            findings.append(_simple_finding(self.name, target, "RDP Host Information Disclosure", Severity.LOW, f"RDP NTLM negotiation disclosed host metadata: {', '.join(disclosed)}.", strength=4, confidence=Confidence.LIKELY, manual=False, category=FindingCategory.INFORMATION))
+
         return ModuleResult(self.name, target, findings=findings, evidence=[e for f in findings for e in f.evidence])
 
 
@@ -346,7 +589,7 @@ class WinRmSafeModule(PortWiseModule):
 
     def run(self, target: dict[str, Any], config: dict[str, Any]) -> ModuleResult:
         severity = Severity.HIGH if int(target.get("port", 0)) == 5985 else Severity.MEDIUM
-        finding = _simple_finding(self.name, target, "WinRM Exposed", severity, "WinRM management endpoint is reachable.")
+        finding = _simple_finding(self.name, target, "WinRM Exposed", severity, "WinRM management endpoint is reachable.", confidence=Confidence.INFORMATIONAL, category=FindingCategory.INFORMATION)
         return ModuleResult(self.name, target, findings=[finding], evidence=finding.evidence)
 
 
@@ -358,16 +601,39 @@ class SnmpSafeModule(PortWiseModule):
     def run(self, target: dict[str, Any], config: dict[str, Any]) -> ModuleResult:
         snmp_config = config.get("snmp", {}) if isinstance(config.get("snmp"), dict) else {}
         findings = [
-            _simple_finding(self.name, target, "SNMP Service Exposed", Severity.MEDIUM, "SNMP service is reachable based on discovery evidence."),
-            _simple_finding(self.name, target, "SNMP v1/v2c Exposed", Severity.MEDIUM, "SNMP v1/v2c may disclose device metadata when community strings are accepted."),
+            _simple_finding(self.name, target, "SNMP Service Exposed", Severity.MEDIUM, "SNMP service is reachable based on discovery evidence.", confidence=Confidence.INFORMATIONAL, category=FindingCategory.INFORMATION),
+            _simple_finding(self.name, target, "SNMP v1/v2c Exposed", Severity.MEDIUM, "SNMP v1/v2c may disclose device metadata when community strings are accepted.", confidence=Confidence.INFORMATIONAL, category=FindingCategory.BEST_PRACTICE),
         ]
+        # NSE snmp-info enrichment
+        snmp_nse = nse_snmp_info(target)
+        if snmp_nse:
+            raw = snmp_nse.get("raw", "")
+            details = "; ".join(f"{k}={v}" for k, v in snmp_nse.items() if k != "raw")[:200]
+            findings.append(_simple_finding(self.name, target, "SNMP System Information Disclosure", Severity.LOW, f"SNMP NSE script disclosed system metadata: {details or raw[:200]}.", strength=5, confidence=Confidence.CONFIRMED, manual=False, category=FindingCategory.INFORMATION))
+
         if bool(snmp_config.get("default_community_check", config.get("snmp_default_community_check", True))):
+            client = client_from_config(config)
+            host = str(target["host"])
             for community in list(snmp_config.get("communities", ["public", "private"]))[:2]:
-                value = _snmp_get(str(target["host"]), int(target["port"]), str(community), _timeout(config, "snmp", 3.0))
-                if value:
-                    findings.append(_simple_finding(self.name, target, "Default SNMP Community Accepted", Severity.HIGH, f"SNMP community '{community}' returned minimal system metadata: {_truncate(value, 160)}", strength=5, confidence=Confidence.CONFIRMED, manual=False))
-                    findings.append(_simple_finding(self.name, target, "SNMP Information Disclosure", Severity.MEDIUM, f"SNMP returned minimal system metadata: {_truncate(value, 160)}", strength=5, confidence=Confidence.CONFIRMED, manual=False))
+                if client.is_tripped(host):
                     break
+                client.throttle(host)
+                value = _snmp_get(host, int(target["port"]), str(community), _timeout(config, "snmp", 3.0))
+                if value:
+                    f_community = _simple_finding(self.name, target, "Default SNMP Community Accepted", Severity.HIGH, f"SNMP community '{community}' returned minimal system metadata: {_truncate(value, 160)}", strength=5, confidence=Confidence.CONFIRMED, manual=False, category=FindingCategory.VULNERABILITY)
+                    f_community.evidence.append(_probe_transcript_evidence(
+                        f"module:{self.name}",
+                        f"SNMP GET sysDescr with community '{community}'",
+                        "SNMP GET sysDescr (OID 1.3.6.1.2.1.1.1.0) community=<redacted>",
+                        f"udp://{host}:{target['port']}",
+                        str(value),
+                    ))
+                    findings.append(f_community)
+                    findings.append(_simple_finding(self.name, target, "SNMP Information Disclosure", Severity.MEDIUM, f"SNMP returned minimal system metadata: {_truncate(value, 160)}", strength=5, confidence=Confidence.CONFIRMED, manual=False, category=FindingCategory.INFORMATION))
+                    break
+        note = _default_cred_note(self.name, target, "snmp " + target_text(target))
+        if note:
+            findings.append(note)
         return ModuleResult(self.name, target, findings=findings, evidence=[e for f in findings for e in f.evidence])
 
 
@@ -378,20 +644,43 @@ class DnsSafeModule(PortWiseModule):
 
     def run(self, target: dict[str, Any], config: dict[str, Any]) -> ModuleResult:
         dns_config = config.get("dns", {}) if isinstance(config.get("dns"), dict) else {}
-        findings = [_simple_finding(self.name, target, "DNS Service Exposed", Severity.LOW, "DNS service is reachable.")]
+        findings = [_simple_finding(self.name, target, "DNS Service Exposed", Severity.LOW, "DNS service is reachable.", confidence=Confidence.INFORMATIONAL, category=FindingCategory.INFORMATION)]
         timeout = _timeout(config, "dns", 3.0)
-        if dns_config.get("recursion_check", True):
-            answer = _dns_query(str(target["host"]), int(target["port"]), "example.com", 1, timeout, recursion=True)
-            if answer and answer.get("ra") and answer.get("ancount", 0) > 0:
-                findings.append(_simple_finding(self.name, target, "DNS Recursion Enabled", Severity.MEDIUM, "Resolver answered a recursive query for example.com.", strength=5, confidence=Confidence.CONFIRMED, manual=False))
-        version = _dns_chaos_version(str(target["host"]), int(target["port"]), timeout)
-        if version:
-            findings.append(_simple_finding(self.name, target, "DNS Version Disclosure", Severity.LOW, f"DNS CHAOS version query returned: {_truncate(version, 160)}", strength=5, confidence=Confidence.CONFIRMED, manual=False))
+        client = client_from_config(config)
+        host = str(target["host"])
+        port = int(target["port"])
+        nse_recursion = nse_dns_recursion(target)
+        if dns_config.get("recursion_check", True) and not client.is_tripped(host):
+            client.throttle(host)
+            answer = _dns_query(host, port, "example.com", 1, timeout, recursion=True)
+            native_recursion = bool(answer and answer.get("ra") and answer.get("ancount", 0) > 0)
+            if native_recursion and nse_recursion:
+                findings.append(_simple_finding(self.name, target, "DNS Recursion Enabled", Severity.MEDIUM, "Both Nmap dns-recursion script and native probe confirm open recursion.", strength=5, confidence=Confidence.CONFIRMED, manual=False, category=FindingCategory.VULNERABILITY))
+            elif native_recursion:
+                findings.append(_simple_finding(self.name, target, "DNS Recursion Enabled", Severity.MEDIUM, "Resolver answered a recursive query for example.com.", strength=5, confidence=Confidence.CONFIRMED, manual=False, category=FindingCategory.VULNERABILITY))
+            elif nse_recursion:
+                findings.append(_simple_finding(self.name, target, "DNS Recursion Enabled", Severity.MEDIUM, "Nmap dns-recursion script indicates open recursion.", strength=5, confidence=Confidence.LIKELY, manual=False, category=FindingCategory.VULNERABILITY))
+        if not client.is_tripped(host):
+            client.throttle(host)
+            version = _dns_chaos_version(host, port, timeout)
+            if version:
+                f_ver = _simple_finding(self.name, target, "DNS Version Disclosure", Severity.LOW, f"DNS CHAOS version query returned: {_truncate(version, 160)}", strength=5, confidence=Confidence.CONFIRMED, manual=False, category=FindingCategory.VULNERABILITY)
+                f_ver.evidence.append(_probe_transcript_evidence(
+                    f"module:{self.name}",
+                    "DNS CHAOS TXT version.bind query",
+                    "DNS CHAOS TXT version.bind",
+                    f"udp://{host}:{port}",
+                    str(version),
+                ))
+                findings.append(f_ver)
         zones = list(dns_config.get("zones", []) or [])
         if dns_config.get("zone_transfer_check", True) and zones:
             for zone in zones[:5]:
-                if _dns_axfr_check(str(target["host"]), int(target["port"]), str(zone), timeout):
-                    findings.append(_simple_finding(self.name, target, "DNS Zone Transfer Allowed", Severity.HIGH, f"AXFR succeeded for configured zone {zone}.", strength=5, confidence=Confidence.CONFIRMED, manual=False))
+                if client.is_tripped(host):
+                    break
+                client.throttle(host)
+                if _dns_axfr_check(host, port, str(zone), timeout):
+                    findings.append(_simple_finding(self.name, target, "DNS Zone Transfer Allowed", Severity.HIGH, f"AXFR succeeded for configured zone {zone}.", strength=5, confidence=Confidence.CONFIRMED, manual=False, category=FindingCategory.VULNERABILITY))
         return ModuleResult(self.name, target, findings=findings, evidence=[e for f in findings for e in f.evidence])
 
 
@@ -401,10 +690,14 @@ class NtpSafeModule(PortWiseModule):
     supported_target_types = ("ntp_targets",)
 
     def run(self, target: dict[str, Any], config: dict[str, Any]) -> ModuleResult:
-        findings = [_simple_finding(self.name, target, "NTP Service Exposed", Severity.LOW, "NTP service is reachable.")]
-        response = _ntp_request(str(target["host"]), int(target["port"]), _timeout(config, "ntp", 3.0))
-        if response:
-            findings.append(_simple_finding(self.name, target, "NTP Information Disclosure", Severity.INFO, f"NTP returned a valid time response; stratum={response.get('stratum')}.", strength=5, confidence=Confidence.CONFIRMED, manual=False))
+        findings = [_simple_finding(self.name, target, "NTP Service Exposed", Severity.LOW, "NTP service is reachable.", confidence=Confidence.INFORMATIONAL, category=FindingCategory.INFORMATION)]
+        client = client_from_config(config)
+        host = str(target["host"])
+        if not client.is_tripped(host):
+            client.throttle(host)
+            response = _ntp_request(host, int(target["port"]), _timeout(config, "ntp", 3.0))
+            if response:
+                findings.append(_simple_finding(self.name, target, "NTP Information Disclosure", Severity.INFO, f"NTP returned a valid time response; stratum={response.get('stratum')}.", strength=5, confidence=Confidence.CONFIRMED, manual=False, category=FindingCategory.INFORMATION))
         return ModuleResult(self.name, target, findings=findings, evidence=[e for f in findings for e in f.evidence])
 
 
@@ -422,11 +715,15 @@ class DatabaseSafeModule(PortWiseModule):
         if "memcached" in text:
             title = "Memcached Exposed"
             severity = Severity.HIGH
-        findings = [_simple_finding(self.name, target, title, severity, "Database service is reachable; no data was queried or dumped.")]
+        findings = [_simple_finding(self.name, target, title, severity, "Database service is reachable; no data was queried or dumped.", confidence=Confidence.INFORMATIONAL, category=FindingCategory.INFORMATION)]
         if bool((config.get("database", {}) if isinstance(config.get("database"), dict) else {}).get("unauthenticated_checks", True)):
-            findings.extend(_database_safe_probe(self.name, target, config, text))
+            client = client_from_config(config)
+            findings.extend(_database_safe_probe(self.name, target, config, text, client=client))
         if target.get("version"):
-            findings.append(_simple_finding(self.name, target, "Database Version Disclosure", Severity.INFO, "Database product/version is visible in service fingerprint."))
+            findings.append(_simple_finding(self.name, target, "Database Version Disclosure", Severity.LOW, "Database product/version is visible in service fingerprint.", category=FindingCategory.VULNERABILITY))
+        note = _default_cred_note(self.name, target, text)
+        if note:
+            findings.append(note)
         return ModuleResult(self.name, target, findings=findings, evidence=[e for f in findings for e in f.evidence])
 
 
@@ -436,17 +733,22 @@ class DevOpsAdminModule(PortWiseModule):
     supported_target_types = ("devops_targets",)
 
     def run(self, target: dict[str, Any], config: dict[str, Any]) -> ModuleResult:
-        findings = [_simple_finding(self.name, target, "DevOps/Admin Panel Exposed", Severity.MEDIUM, "Administrative or DevOps service fingerprint is reachable.")]
-        probe = _safe_http_fingerprint(target, config, ["/", "/login", "/-/readiness", "/api/v4/version", "/service/rest/v1/status", "/api/health", "/-/health"])
+        findings = [_simple_finding(self.name, target, "DevOps/Admin Panel Exposed", Severity.MEDIUM, "Administrative or DevOps service fingerprint is reachable.", confidence=Confidence.INFORMATIONAL, category=FindingCategory.INFORMATION)]
+        client = client_from_config(config)
+        text = target_text(target)
+        probe = _safe_http_fingerprint(target, config, ["/", "/login", "/-/readiness", "/api/v4/version", "/service/rest/v1/status", "/api/health", "/-/health"], client=client)
         if probe:
             status, title, indicator, url = probe
             findings[0].evidence[0].data.update({"url": url, "status": status, "title": title, "indicator": indicator})
             if status == 200 and any(word in indicator.lower() for word in ("anonymous", "public", "unauthenticated", "ready", "healthy")):
-                findings.append(_simple_finding(self.name, target, "Anonymous Access Possible", Severity.MEDIUM, f"Safe endpoint responded with public status indicator at {url}.", strength=4))
-            if any(word in target_text(target) + " " + indicator.lower() for word in ("vault", "consul", "minio", "airflow", "jupyter", "portainer")):
-                findings.append(_simple_finding(self.name, target, "Sensitive Management Interface Exposed", Severity.HIGH, f"Sensitive management fingerprint observed at {url}.", strength=4))
+                findings.append(_simple_finding(self.name, target, "Anonymous Access Possible", Severity.MEDIUM, f"Safe endpoint responded with public status indicator at {url}.", strength=4, category=FindingCategory.VULNERABILITY))
+            if any(word in text + " " + indicator.lower() for word in ("vault", "consul", "minio", "airflow", "jupyter", "portainer")):
+                findings.append(_simple_finding(self.name, target, "Sensitive Management Interface Exposed", Severity.HIGH, f"Sensitive management fingerprint observed at {url}.", strength=4, category=FindingCategory.VULNERABILITY))
         if target.get("version"):
-            findings.append(_simple_finding(self.name, target, "Version Disclosure", Severity.INFO, "Service version is visible in fingerprint."))
+            findings.append(_simple_finding(self.name, target, "Version Disclosure", Severity.LOW, "Service version is visible in fingerprint.", category=FindingCategory.VULNERABILITY))
+        note = _default_cred_note(self.name, target, text)
+        if note:
+            findings.append(note)
         return ModuleResult(self.name, target, findings=findings, evidence=[e for f in findings for e in f.evidence])
 
 
@@ -457,12 +759,13 @@ class KubernetesContainerModule(PortWiseModule):
 
     def run(self, target: dict[str, Any], config: dict[str, Any]) -> ModuleResult:
         text = target_text(target)
+        port = int(target.get("port", 0))
         if "docker registry" in text:
             title = "Docker Registry Exposed"
             paths = ["/v2/"]
-        elif "docker" in text:
+        elif "docker" in text or port in {2375, 2376}:
             title = "Docker API Exposed"
-            paths = ["/version"]
+            paths = ["/version", "/info"]
         elif "etcd" in text:
             title = "etcd Exposed"
             paths = ["/version", "/health"]
@@ -472,12 +775,23 @@ class KubernetesContainerModule(PortWiseModule):
         else:
             title = "Kubernetes API Exposed"
             paths = ["/version", "/readyz", "/healthz"]
-        finding = _simple_finding(self.name, target, title, Severity.HIGH, "Container management interface is reachable. Only safe metadata endpoints are in scope.")
-        probe = _safe_http_fingerprint(target, config, paths)
+        finding = _simple_finding(self.name, target, title, Severity.HIGH, "Container management interface is reachable. Only safe metadata endpoints are in scope.", confidence=Confidence.INFORMATIONAL, category=FindingCategory.INFORMATION)
+        client = client_from_config(config)
+        findings = [finding]
+        probe = _safe_http_fingerprint(target, config, paths, client=client)
         if probe:
             status, title_text, indicator, url = probe
             finding.evidence[0].data.update({"url": url, "status": status, "title": title_text, "indicator": indicator})
-        return ModuleResult(self.name, target, findings=[finding], evidence=finding.evidence)
+            ind = indicator.lower()
+            # Confirmed unauthenticated Docker API = remote container takeover → CRITICAL
+            if ("docker" in title.lower()) and status == 200 and ("apiversion" in ind or "\"version\"" in ind or "docker" in ind or "containers" in ind):
+                crit = _simple_finding(self.name, target, "Unauthenticated Docker API Access", Severity.CRITICAL, f"The Docker Engine API responded to an unauthenticated request at {url}. This typically permits full container/host takeover.", strength=5, confidence=Confidence.CONFIRMED, manual=False, category=FindingCategory.VULNERABILITY)
+                crit.evidence.append(_probe_transcript_evidence(f"module:{self.name}", "Unauthenticated Docker API metadata request", f"GET {url}", url, _truncate(indicator, 300)))
+                findings.append(crit)
+            elif title == "Docker Registry Exposed" and status in (200, 401):
+                reg = _simple_finding(self.name, target, "Exposed Docker Registry", Severity.HIGH, f"A Docker registry v2 API is reachable at {url} (status {status}). Review whether anonymous pull/push is permitted.", strength=4, confidence=Confidence.LIKELY, manual=True, category=FindingCategory.VULNERABILITY)
+                findings.append(reg)
+        return ModuleResult(self.name, target, findings=findings, evidence=[e for f in findings for e in f.evidence])
 
 
 class MailSafeModule(PortWiseModule):
@@ -488,20 +802,24 @@ class MailSafeModule(PortWiseModule):
     def run(self, target: dict[str, Any], config: dict[str, Any]) -> ModuleResult:
         text = target_text(target)
         findings: list[Finding] = []
+        client = client_from_config(config)
+        host = str(target["host"])
         if "smtp" in text or int(target.get("port", 0)) in {25, 465, 587}:
-            findings.append(_simple_finding(self.name, target, "SMTP Service Exposed", Severity.LOW, "SMTP service is reachable; no mail sending was performed."))
-            banner, replies = _smtp_safe_check(str(target["host"]), int(target["port"]), _timeout(config, "mail", 4.0))
-            if banner:
-                findings.append(_simple_finding(self.name, target, "Mail Server Version Disclosure", Severity.INFO, f"SMTP banner: {_truncate(banner, 160)}", strength=4))
-            if replies.get("starttls") is False and int(target.get("port", 0)) in {25, 587}:
-                findings.append(_simple_finding(self.name, target, "SMTP STARTTLS Missing", Severity.MEDIUM, "SMTP EHLO capabilities did not advertise STARTTLS.", strength=4))
-            if replies.get("vrfy"):
-                findings.append(_simple_finding(self.name, target, "VRFY Enabled", Severity.LOW, "SMTP server accepted VRFY command syntax check without user enumeration.", strength=4))
-            if replies.get("expn"):
-                findings.append(_simple_finding(self.name, target, "EXPN Enabled", Severity.LOW, "SMTP server accepted EXPN command syntax check without list enumeration.", strength=4))
+            findings.append(_simple_finding(self.name, target, "SMTP Service Exposed", Severity.LOW, "SMTP service is reachable; no mail sending was performed.", confidence=Confidence.INFORMATIONAL, category=FindingCategory.INFORMATION))
+            if not client.is_tripped(host):
+                client.throttle(host)
+                banner, replies = _smtp_safe_check(host, int(target["port"]), _timeout(config, "mail", 4.0))
+                if banner:
+                    findings.append(_simple_finding(self.name, target, "Mail Server Version Disclosure", Severity.LOW, f"SMTP banner: {_truncate(banner, 160)}", strength=4, category=FindingCategory.VULNERABILITY))
+                if replies.get("starttls") is False and int(target.get("port", 0)) in {25, 587}:
+                    findings.append(_simple_finding(self.name, target, "SMTP STARTTLS Missing", Severity.MEDIUM, "SMTP EHLO capabilities did not advertise STARTTLS.", strength=4, category=FindingCategory.BEST_PRACTICE))
+                if replies.get("vrfy"):
+                    findings.append(_simple_finding(self.name, target, "VRFY Enabled", Severity.LOW, "SMTP server accepted VRFY command syntax check without user enumeration.", strength=4, category=FindingCategory.BEST_PRACTICE))
+                if replies.get("expn"):
+                    findings.append(_simple_finding(self.name, target, "EXPN Enabled", Severity.LOW, "SMTP server accepted EXPN command syntax check without list enumeration.", strength=4, category=FindingCategory.BEST_PRACTICE))
         else:
             title = "POP3 Cleartext Service Exposed" if "pop3" in text or int(target.get("port", 0)) == 110 else "IMAP Cleartext Service Exposed"
-            findings.append(_simple_finding(self.name, target, title, Severity.LOW, "Mail service is reachable; no authentication was attempted."))
+            findings.append(_simple_finding(self.name, target, title, Severity.LOW, "Mail service is reachable; no authentication was attempted.", confidence=Confidence.INFORMATIONAL, category=FindingCategory.INFORMATION))
         return ModuleResult(self.name, target, findings=findings, evidence=[e for f in findings for e in f.evidence])
 
 
@@ -513,11 +831,58 @@ class VpnApplianceModule(PortWiseModule):
     def run(self, target: dict[str, Any], config: dict[str, Any]) -> ModuleResult:
         text = target_text(target)
         title = "VPN Interface Exposed" if any(word in text for word in ("vpn", "globalprotect", "fortigate", "pulse", "ivanti", "horizon")) else "Security Appliance Interface Exposed"
-        findings = [_simple_finding(self.name, target, title, Severity.MEDIUM, "Security appliance interface is reachable based on fingerprint evidence.")]
-        findings.append(_simple_finding(self.name, target, "Needs Owner Validation", Severity.INFO, "Security appliance exposure should be validated with the service owner.", confidence=Confidence.INFORMATIONAL))
+        findings = [_simple_finding(self.name, target, title, Severity.MEDIUM, "Security appliance interface is reachable based on fingerprint evidence.", confidence=Confidence.INFORMATIONAL, category=FindingCategory.INFORMATION)]
+        findings.append(_simple_finding(self.name, target, "Needs Owner Validation", Severity.INFO, "Security appliance exposure should be validated with the service owner.", confidence=Confidence.INFORMATIONAL, category=FindingCategory.INFORMATION))
         if target.get("version"):
-            findings.append(_simple_finding(self.name, target, "Appliance Version Disclosure", Severity.INFO, "Appliance version is visible in fingerprint."))
+            findings.append(_simple_finding(self.name, target, "Appliance Version Disclosure", Severity.LOW, "Appliance version is visible in fingerprint.", category=FindingCategory.VULNERABILITY))
         return ModuleResult(self.name, target, findings=findings, evidence=[e for f in findings for e in f.evidence])
+
+
+def _default_cred_note(module: str, target: dict[str, Any], product_text: str) -> Finding | None:
+    """Emit a manual-verification note when a product with known default creds is detected."""
+    match = lookup_default_creds(product_text)
+    if not match:
+        return None
+    kb_key, entry = match
+    severity_str = entry.get("severity", "low")
+    severity = Severity.HIGH if severity_str == "high" else Severity.MEDIUM if severity_str == "medium" else Severity.LOW
+    pairs = entry.get("pairs", [])
+    if pairs:
+        cred_list = ", ".join(f"{u or '(none)'}:{p or '(blank)'}" for u, p in pairs[:5])
+        desc_creds = f" Known defaults: {cred_list}."
+    else:
+        desc_creds = " " + entry.get("notes", "")
+    title = f"Default Credentials Should Be Manually Verified — {kb_key}"
+    description = (
+        f"PortWise detected {kb_key} (fingerprint match). "
+        f"This product commonly ships with default credentials.{desc_creds} "
+        "PortWise does NOT attempt authentication. "
+        "Manually verify these credentials under proper authorization and rotate if valid."
+    )
+    notes = entry.get("notes", "")
+    if notes:
+        description += f" Note: {notes}"
+    evidence = Evidence(f"module:{module}", description, 2, {"kb_key": kb_key, "refs": entry.get("references", [])})
+    return Finding(
+        title=title,
+        severity=severity,
+        asset=str(target.get("host", "")),
+        port=int(target.get("port", 0) or 0),
+        protocol=str(target.get("protocol", "")),
+        service=str(target.get("service", "")),
+        description=description,
+        recommendation=f"Verify default credentials manually and rotate immediately if valid. References: {', '.join(entry.get('references', []))}",
+        confidence=Confidence.INFORMATIONAL,
+        evidence_strength=2,
+        type="Manual Verification Required",
+        module=module,
+        false_positive_risk="low",
+        manual_validation=True,
+        evidence=[evidence],
+        category=FindingCategory.BEST_PRACTICE,
+        references=entry.get("references", []),
+        tags=["default-creds", "manual-verification"],
+    )
 
 
 def _simple_finding(
@@ -530,6 +895,7 @@ def _simple_finding(
     strength: int = 2,
     confidence: Confidence = Confidence.LIKELY,
     manual: bool = True,
+    category: FindingCategory = FindingCategory.VULNERABILITY,
 ) -> Finding:
     evidence = Evidence(f"module:{module}", description, strength, target)
     return FindingFactory.finding(
@@ -544,6 +910,27 @@ def _simple_finding(
         type_="Exposure" if severity in {Severity.HIGH, Severity.MEDIUM} else "Risk Indicator",
         false_positive_risk="low" if strength >= 4 else "contextual",
         manual_validation=manual,
+        category=category,
+    )
+
+
+def _probe_transcript_evidence(source: str, description: str, probe: str, target_str: str, response: str, strength: int = 5) -> Evidence:
+    """Build a transcript-like Evidence for non-HTTP probe results (PT5 Step 3)."""
+    from datetime import datetime, timezone
+    from portwise.utils.sanitize import sanitize_body
+    ts = datetime.now(timezone.utc).isoformat()
+    return Evidence(
+        source=source,
+        description=description,
+        strength=strength,
+        data={
+            "transcript": {
+                "request": {"probe": probe, "target": target_str},
+                "response": {"status": "ok", "body_excerpt": sanitize_body(response, cap=512)},
+                "timing_ms": 0,
+                "observed_at": ts,
+            }
+        },
     )
 
 
@@ -631,25 +1018,71 @@ def _ntp_request(host: str, port: int, timeout: float) -> dict[str, int] | None:
         return None
 
 
-def _database_safe_probe(module: str, target: dict[str, Any], config: dict[str, Any], text: str) -> list[Finding]:
+def _mongodb_ping(host: str, port: int, timeout: float) -> bool:
+    """Send a minimal MongoDB isMaster wire-protocol message. Returns True if a response arrives."""
+    # Minimal OP_QUERY for isMaster command (MongoDB wire protocol)
+    body = (
+        b"\x00\x00\x00\x00"  # flags
+        b"admin.$cmd\x00"     # fullCollectionName
+        b"\x00\x00\x00\x00"  # numberToSkip
+        b"\x01\x00\x00\x00"  # numberToReturn
+        b"\x13\x00\x00\x00"  # BSON doc length (19 bytes)
+        b"\x01isMaster\x00"  # double field "isMaster"
+        b"\x00\x00\x00\x00\x00\x00\xf0\x3f"  # value 1.0
+        b"\x00"               # BSON doc terminator
+    )
+    header = (
+        len(body) + 16
+    ).to_bytes(4, "little") + b"\x01\x00\x00\x00\x00\x00\x00\x00\xd4\x07\x00\x00"
+    packet = header + body
+    try:
+        import socket as _sock
+        with _sock.create_connection((host, port), timeout=timeout) as s:
+            s.settimeout(timeout)
+            s.sendall(packet)
+            data = s.recv(256)
+        return len(data) > 16
+    except Exception:
+        return False
+
+
+def _database_safe_probe(module: str, target: dict[str, Any], config: dict[str, Any], text: str, *, client: PoliteHttpClient | None = None) -> list[Finding]:
+    if client is None:
+        client = client_from_config(config)
     host = str(target["host"])
     port = int(target["port"])
     timeout = _timeout(config, "database", 4.0)
+    # If the fingerprint text doesn't name the engine, infer it from the port so
+    # port-routed targets still get the correct probe.
+    _port_hint = {3306: "mysql", 5432: "postgresql", 27017: "mongodb", 6379: "redis",
+                  11211: "memcached", 9200: "elasticsearch", 9300: "elasticsearch",
+                  5984: "couchdb", 8086: "influxdb", 7474: "neo4j", 2379: "etcd"}.get(port)
+    if _port_hint and _port_hint not in text:
+        text = f"{text} {_port_hint}"
     findings: list[Finding] = []
     if "redis" in text:
-        try:
-            data = _tcp_send_recv(host, port, b"*1\r\n$4\r\nPING\r\n", timeout)
-            if b"PONG" in data:
-                findings.append(_simple_finding(module, target, "Unauthenticated Redis Access", Severity.HIGH, "Redis PING succeeded without AUTH.", strength=5, confidence=Confidence.CONFIRMED, manual=False))
-        except Exception:
-            pass
+        if not client.is_tripped(host):
+            client.throttle(host)
+            try:
+                data = _tcp_send_recv(host, port, b"*1\r\n$4\r\nPING\r\n", timeout)
+                if b"PONG" in data:
+                    findings.append(_simple_finding(module, target, "Unauthenticated Redis Access", Severity.HIGH, "Redis PING succeeded without AUTH.", strength=5, confidence=Confidence.CONFIRMED, manual=False, category=FindingCategory.VULNERABILITY))
+            except Exception:
+                pass
     elif "memcached" in text:
-        try:
-            data = _tcp_send_recv(host, port, b"version\r\n", timeout)
-            if data:
-                findings.append(_simple_finding(module, target, "Memcached Exposed", Severity.HIGH, f"Memcached responded to version check: {_truncate(data, 160)}", strength=5, confidence=Confidence.CONFIRMED, manual=False))
-        except Exception:
-            pass
+        if not client.is_tripped(host):
+            client.throttle(host)
+            try:
+                data = _tcp_send_recv(host, port, b"version\r\n", timeout)
+                if data:
+                    findings.append(_simple_finding(module, target, "Memcached Exposed", Severity.HIGH, f"Memcached responded to version check: {_truncate(data, 160)}", strength=5, confidence=Confidence.CONFIRMED, manual=False, category=FindingCategory.VULNERABILITY))
+            except Exception:
+                pass
+    elif "mongodb" in text:
+        if not client.is_tripped(host):
+            client.throttle(host)
+            if _mongodb_ping(host, port, timeout):
+                findings.append(_simple_finding(module, target, "Unauthenticated MongoDB Access Indicator", Severity.HIGH, "MongoDB responded to a wire-protocol isMaster probe without authentication. Verify whether auth is enforced.", strength=4, confidence=Confidence.LIKELY, manual=True, category=FindingCategory.VULNERABILITY))
     elif any(name in text for name in ("elasticsearch", "couchdb", "solr", "etcd", "neo4j", "influxdb")):
         paths = {
             "elasticsearch": ["/", "/_cluster/health"],
@@ -660,21 +1093,34 @@ def _database_safe_probe(module: str, target: dict[str, Any], config: dict[str, 
             "influxdb": ["/health", "/ping"],
         }
         selected = next((value for key, value in paths.items() if key in text), ["/"])
-        probe = _safe_http_fingerprint(target, config, selected)
+        probe = _safe_http_fingerprint(target, config, selected, client=client)
         if probe:
             status, title, indicator, url = probe
             product_title = "Unauthenticated Elasticsearch Access" if "elasticsearch" in text else "Database Service Exposed"
-            findings.append(_simple_finding(module, target, product_title, Severity.HIGH if status == 200 else Severity.MEDIUM, f"Safe database HTTP endpoint responded at {url}: {_truncate(indicator, 180)}", strength=5 if status == 200 else 4))
+            findings.append(_simple_finding(module, target, product_title, Severity.HIGH if status == 200 else Severity.MEDIUM, f"Safe database HTTP endpoint responded at {url}: {_truncate(indicator, 180)}", strength=5 if status == 200 else 4, category=FindingCategory.VULNERABILITY))
     return findings
 
 
-def _safe_http_fingerprint(target: dict[str, Any], config: dict[str, Any], paths: list[str]) -> tuple[int, str, str, str] | None:
+def _safe_http_fingerprint(target: dict[str, Any], config: dict[str, Any], paths: list[str], *, client: PoliteHttpClient | None = None) -> tuple[int, str, str, str] | None:
+    if client is None:
+        client = client_from_config(config)
     host = str(target["host"])
     port = int(target["port"])
     timeout = _timeout(config, default=4.0)
+    tls = port in {443, 8443, 9443}
     for path in paths:
         try:
-            status, headers, body, scheme = _http_request(host, port, path, timeout)
+            if client.is_tripped(host):
+                break
+            resp = client.request(host, port, "GET", path, tls, timeout)
+            body = resp.read(4096).decode("utf-8", errors="replace")
+            headers = {k.lower(): v for k, v in resp.getheaders()}
+            status = resp.status
+            scheme = "https" if tls else "http"
+        except OSError as exc:
+            if "[PortWise]" in str(exc):
+                break
+            continue
         except Exception:
             continue
         title = _extract_title(body)

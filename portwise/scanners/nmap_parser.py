@@ -2,8 +2,34 @@ from __future__ import annotations
 
 import xml.etree.ElementTree as ET
 from pathlib import Path
+from typing import Any
 
 from portwise.core.models import Asset, Service
+
+
+def _parse_nse_element(el: ET.Element) -> Any:
+    """Recursively parse NSE <table>/<elem> structured output into Python dicts/lists."""
+    children = [c for c in el if c.tag in ("table", "elem")]
+    if not children:
+        return el.text or ""
+
+    keyed: dict[str, Any] = {}
+    unkeyed: list[Any] = []
+
+    for child in children:
+        key = child.attrib.get("key")
+        value: Any = child.text or "" if child.tag == "elem" else _parse_nse_element(child)
+        if key:
+            keyed[key] = value
+        else:
+            unkeyed.append(value)
+
+    if keyed and not unkeyed:
+        return keyed
+    if unkeyed and not keyed:
+        return unkeyed
+    # Mixed container: list items go under "_items"
+    return {"_items": unkeyed, **keyed}
 
 
 def parse_nmap_xml(path: Path | str) -> list[Asset]:
@@ -44,10 +70,12 @@ def parse_nmap_xml(path: Path | str) -> list[Asset]:
         for port_el in host.findall("./ports/port"):
             state_el = port_el.find("state")
             service_el = port_el.find("service")
-            scripts = {
-                script.attrib.get("id", "script"): script.attrib.get("output", "")
-                for script in port_el.findall("script")
-            }
+            scripts: dict[str, Any] = {}
+            for script_el in port_el.findall("script"):
+                sid = script_el.attrib.get("id", "script")
+                output = script_el.attrib.get("output", "")
+                data = _parse_nse_element(script_el)
+                scripts[sid] = {"output": output, "data": data}
             cpes = [cpe.text.strip() for cpe in port_el.findall("./service/cpe") if cpe.text]
             service = Service(
                 host=ip,

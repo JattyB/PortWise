@@ -1,0 +1,111 @@
+PORTWISE PT2 — CLIENT-GRADE PENTEST REPORT
+===========================================
+
+USAGE: Claude Code in C:\Users\ADMIN\Codex\Portwise\PortWise
+  /model claude-sonnet-4-6   (use Opus only if CVSS-vector logic gets hard)
+  Read the file PT2_client_report.txt and follow all instructions. TDD. Plan first.
+
+NO LLM/API. Pure Python. Offline (embed everything, no CDN). Suite green + ruff clean.
+
+------------------------------------------------------------
+WHY THIS MATTERS
+------------------------------------------------------------
+The dark HTML report (from fixpack #4) is technically good but it's a SCAN
+report, not a PENTEST DELIVERABLE. A client/handover report needs an executive
+narrative, CVSS vectors, structured remediation, an affected-asset matrix, and
+an evidence appendix. This is what makes PortWise output look like "a pentest"
+rather than "a scan dump." The data model already has most fields; this pack
+assembles them into a deliverable.
+
+------------------------------------------------------------
+WHAT TO BUILD
+------------------------------------------------------------
+
+STEP 1 — CVSS vector support (offline, no API).
+New file: portwise/intelligence/cvss.py
+  - A pure-Python CVSS 3.1 base-score calculator: parse_vector(vector_str) ->
+    {base_score, severity, metrics}, and build_vector(metrics) -> string.
+  - For CVE findings: if NVD returned a CVSS vector (it does — cvssData.vectorString),
+    capture and display the FULL vector, not just the number. Update
+    cve_enrichment.py to store cvss_vector alongside cvss.
+  - For non-CVE findings (config issues), provide a small mapping of
+    PortWise finding types -> representative CVSS 3.1 vectors + scores
+    (e.g. "SMB Signing Not Required" -> AV:A/AC:H/... ). Keep this as a
+    reviewable lookup table in cvss.py with a comment that these are indicative
+    base vectors a tester should confirm. Mark them clearly as "indicative".
+
+STEP 2 — Remediation knowledge base.
+New file: portwise/reporting/remediation.py
+  - A dict mapping finding type/title -> structured remediation:
+      { summary, steps: [..], references: [urls], effort: low/med/high }
+  - Cover all the finding types PortWise can emit (TLS, HTTP, SMB, SSH, SNMP,
+    RDP, WinRM, DNS, NTP, DB, exposure, CVE-generic, default pages, admin panels).
+  - References point to authoritative sources (vendor docs, CIS benchmarks,
+    OWASP, RFCs). NO made-up links — only well-known stable URLs; if unsure,
+    omit the link rather than invent one.
+
+STEP 3 — Build the client report generator.
+New file: portwise/reporting/pentest_report.py
+  write_pentest_report(data, output_path, fmt="html") -> Path
+  Sections, in order:
+   1. Cover: project, client/profile, scan window, tool version, CONFIDENTIAL
+      / AUTHORIZED-TESTING-ONLY banner, scope summary (targets, ports).
+   2. Executive Summary (auto-generated from data, NOT from an LLM — use
+      templated sentences):
+        - total findings by severity, # confirmed vulnerabilities,
+        - the top 3-5 risks in plain language using templated phrasing keyed on
+          finding type (e.g. "An exposed environment file was identified on
+          {asset}, which may disclose credentials."),
+        - overall risk posture statement keyed on highest severity present.
+   3. Risk Methodology: explain severity + confidence + category model
+      (so the reader trusts the scoring). Reuse the explanation from fix #1.
+   4. Findings Summary Matrix: table of all findings (ID, title, severity,
+      confidence, CVSS, affected asset count, status).
+   5. Detailed Findings (one block each, CONFIRMED VULNERABILITIES first,
+      sorted by CVSS/priority):
+        - Title, severity badge, CVSS score + full vector, confidence, category
+        - Affected assets table (host:port, evidence strength)
+        - Description
+        - Evidence (request/response transcript from PT5 if present; else the
+          structured evidence data)
+        - Remediation (from remediation.py: summary, steps, references, effort)
+   6. Best-Practice / Hardening (de-emphasized, category=best_practice/hygiene).
+   7. Informational / Asset Inventory.
+   8. Appendices: full asset:service inventory, commands executed, skipped/
+      failed checks, NSE scripts consulted, methodology notes.
+  - HTML output reuses the dark cyberpunk theme + inline charts from the
+    fixpack report (refactor shared CSS/chart helpers into
+    portwise/reporting/_html_common.py so both reports share styling).
+  - Self-contained, offline, XSS-safe (html.escape + safe JSON embedding).
+
+STEP 4 — Wire into CLI.
+  - report --format adds a new choice: "pentest" (and include it in "all").
+      portwise report --run runs/latest.json --format pentest
+  - Output filename: PortWise_Pentest_Report.html
+
+------------------------------------------------------------
+TESTS
+------------------------------------------------------------
+  - test_cvss_vector_parse_and_score (known vector -> known score)
+  - test_cvss_roundtrip_build_parse
+  - test_remediation_lookup_covers_all_emitted_finding_types (iterate the set
+    of titles the modules can emit; assert each has a remediation entry or a
+    sane generic fallback)
+  - test_pentest_report_has_exec_summary_and_detailed_findings
+  - test_exec_summary_is_templated_not_empty
+  - test_confirmed_vulns_sorted_first
+  - test_report_self_contained_no_cdn
+  - test_report_xss_safe
+
+------------------------------------------------------------
+ACCEPTANCE
+------------------------------------------------------------
+- `portwise report --format pentest` produces a deliverable that reads like a
+  real infra pentest report: exec summary, CVSS vectors, remediation, evidence,
+  asset matrix, appendices.
+- No LLM used anywhere; exec summary is templated Python.
+- Generate PortWise_Pentest_Report.html from examples/sample_report.json and
+  show it to me.
+- Suite green; ruff clean.
+
+STOP after the plan. Wait for confirmation.

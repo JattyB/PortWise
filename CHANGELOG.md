@@ -1,5 +1,194 @@
 # Changelog
 
+## v0.6.1 — full PT means full PT
+
+- Removed the confusing three-tier "safe/proof/controlled" gate. There are now
+  just two modes: **full** (run every active check — crawl, content discovery,
+  injection indicators, all module probes, CVE) and **safe** (light recon only,
+  used by quick-triage).
+- `full-vapt`, `internal-vapt`, and `external-vapt` all run at **full** with the
+  full TCP port scan and CVE mapping. One command, no flags, same for internal or
+  external:
+      portwise scan --targets targets.txt --profile full-vapt --config config.yaml --execute
+- `--validation-level` choices simplified to `safe` / `full` (optional; the
+  profile decides by default).
+
+
+## v0.6.0 — one-command full PT, redesigned report
+
+### Same command, internal or external — no restrictions
+- `full-vapt` now runs at `validation_level: controlled`, so a single command
+  performs the full assessment (all modules, active web crawl/content-discovery/
+  injection indicators, CVE mapping) with no extra flags:
+      portwise scan --targets targets.txt --profile full-vapt --config config.yaml --execute
+  `--internet-facing` is now purely a severity-context hint (optional); it imposes
+  no restrictions. The same command works for internal and external engagements.
+- `--validation-level` is now optional and resolved as CLI > profile > config.
+- `full-vapt` emits the HTML report by default.
+
+### Report UI redesign
+- Replaced the neon "terminal" theme with a clean, professional light report:
+  system fonts, indigo accent, soft cards/shadows, refined severity badges,
+  print-friendly stylesheet. Charts, tables, evidence/POC blocks restyled to
+  match. Affects both the standard HTML report and the pentest report.
+
+
+## v0.5.0 — more services, port-based routing, POC capture
+
+### More ports / services checked
+- **Port-based routing**: alt web ports (8080/8443/8880, Cloudflare 2052/2053/
+  2082/2083/2086/2087/2095/2096, 5000, etc.) now reach the HTTP/TLS engines even
+  when nmap labels them with non-web default names. Well-known DB ports
+  (6379/9200/27017/11211/...) route to the database module; Docker 2375/2376 to
+  the container module.
+- HTTP engine now tries the opposite scheme on failure (ambiguous alt ports) and
+  recognises many more HTTPS ports.
+- Database safe-probe infers the engine from the port when the fingerprint is
+  unnamed.
+- **Unauthenticated Docker API** now reported as CRITICAL (confirmed via read-only
+  /version, /info); exposed Docker registry flagged.
+
+### POC / evidence capture
+- New `portwise poc [--capture] [--min-severity] [--out]`: writes a per-finding
+  evidence file with a reproduction command (nmap/openssl/curl/ssh-audit/redis-cli)
+  and a slot to paste output / reference a screenshot, plus an INDEX. With
+  `--capture` it runs the *read-only* commands and embeds their real output as
+  attachable evidence. POC commands are sourced from finding evidence
+  (TLS/cipher/HSTS already carry nmap POCs) or derived per finding type.
+
+
+## v0.4.0 — scan accuracy, TLS simplification, web crawl, POC
+
+### Scan correctness (was missing hosts/ports)
+- Port scans now use **-Pn** and seed every supplied target as live
+  (`scanner.assume_hosts_up`, default on), so ICMP-filtered-but-alive hosts are
+  scanned instead of dropped at discovery.
+- Removed the aggressive `--host-timeout 20m` from the full `-p-` scan that was
+  silently skipping heavily-filtered hosts (the cause of the full-scan
+  discrepancy vs a manual `nmap -Pn -p-`). Raised `--min-rate`, `-T4`.
+
+### False positives
+- HTTP content discovery now requires a **content signature** (or demotes to
+  manual-validation) before confirming `/.git`, `/.env`, `/config.php`, etc., so
+  SPA/catch-all servers no longer produce confident-but-wrong "file exposed" hits.
+
+### TLS (simplified per request)
+- Single **"Weak TLS Ciphers In Use"** finding (no CBC/PFS sub-findings).
+- **Deprecated protocol** vuln for SSLv3 / TLS 1.0 / TLS 1.1.
+- Every TLS/cipher/HSTS finding now carries an **nmap POC command** in its
+  description/evidence (e.g. `nmap --script ssl-enum-ciphers -p 443 host`).
+
+### Findings
+- Version/banner disclosure is now a **LOW vulnerability** (was informational).
+
+### Web
+- New same-origin **web crawler**: surfaces interesting endpoints/API paths,
+  JS files, and high-signal secrets (keys/tokens/JWT/private keys, redacted).
+  Skips off-origin redirects; GET-only.
+- HTTP client now sends a **full browser header set** (current Chrome UA, Sec-CH-UA,
+  Accept-*, Sec-Fetch-*) to reduce bot blocking.
+
+
+## v0.3.0 — PT-buddy update
+
+### False-positive reduction
+- **CVE keyword-only matches suppressed by default.** A service with a version
+  but no CPE used to pull dozens of unrelated CVEs (one finding each). These are
+  now dropped unless `cve.include_keyword_only: true`.
+- **Version-unconfirmed CVEs collapse** into a single "needs manual validation"
+  finding per service (`cve.collapse_version_unknown`, default true).
+- **Stricter product matching** in `cpe_product_matches`: exact/token/alias only,
+  removing the loose substring rule that caused cross-product matches
+  (e.g. "ssh"→"openssh", "sql"→every SQL engine).
+- **Finding dedup pass** (`dedupe_findings`) collapses identical endpoint+title
+  rows from overlapping code paths, keeping the highest-confidence copy.
+
+### New detection
+- **Native SSH algorithm enumeration** (`scanners/ssh_algos.py`): read-only
+  KEXINIT handshake (no auth) flags weak KEX/cipher/MAC/host-key. Works without
+  nmap; falls back to NSE `ssh2-enum-algos` evidence when present.
+- **Native SMB negotiate probe** (`scanners/smb_native.py`): read-only handshake
+  detects SMBv1 support and message-signing posture (no auth, no tree connect).
+- **Plaintext-protocol module**: flags Telnet/FTP/HTTP/r-services/SNMP/LDAP/VNC/
+  TFTP cleartext exposure; ignores TLS tunnels; softens STARTTLS-capable services.
+- **Service-detection nmap command now requests the right safe NSE scripts**
+  (`ssh2-enum-algos`, `smb-security-mode`, `smb2-security-mode`, `ssl-enum-ciphers`,
+  etc.) — previously `-sC` alone never collected SSH-algo or SMB-mode data.
+
+### Handoff / export
+- New `portwise handoff [--out plan.sh] [--category C] [--json]`: turns findings
+  into SUGGESTED command templates for the operator's own tools (NetExec,
+  ssh-audit, nuclei/ffuf/nikto/whatweb, testssl/sslscan, snmpwalk/onesixtyone,
+  dig AXFR, searchsploit). PortWise never runs them; credential-attack commands
+  are explicitly flagged as requiring authorization.
+
+### New CLI views
+- `portwise ports [--port N] [--protocol] [--service] [--min-count] [--hosts] [--json]`
+  — open-port rollup across hosts ("port 22 open on N IPs, here are the IPs").
+- `portwise summary [--json]` — PT overview: port histogram, cleartext exposure,
+  weak-crypto highlights, actionable finding count.
+- Scan summary reworked into the same compact PT view (no report spam).
+
+## v0.2.0 — 2026-05-22
+
+### Bug fixes
+
+**Bug 1 — Protocol findings now respect the category system (false-positive reduction)**
+
+Every `_simple_finding()` call in the registry modules previously defaulted to
+`FindingCategory.VULNERABILITY`, inflating "Service Exposed" and version-disclosure
+noise into the vulnerability bucket. Fixed:
+
+- Added `category: FindingCategory` parameter to `FindingFactory.finding()` and
+  `_simple_finding()`.
+- Classified every registry call site:
+  - Bare reachability ("SSH Exposed", "SMB Service Exposed", etc.) → `INFORMATION`
+  - Version/OS/domain disclosures → `INFORMATION`
+  - Real misconfigurations (SMBv1, RDP NLA Disabled, Anonymous FTP, Default SNMP
+    Community, DNS Recursion Enabled, DNS Zone Transfer Allowed) → `VULNERABILITY`
+  - Best-practice advisories (Legacy SSH, SNMP v1/v2c advisory, SMTP STARTTLS
+    Missing, VRFY/EXPN Enabled) → `BEST_PRACTICE`
+- Bare reachability findings downgraded from `Confidence.LIKELY` to
+  `Confidence.INFORMATIONAL` (an open port is not a "likely" finding; nmap already
+  confirmed it). `apply_category_rules` now correctly forces INFORMATION → INFO
+  severity and caps BEST_PRACTICE at LOW for these findings.
+
+**Bug 2 — Registry raw probes now route through the rate limiter (WAF/IDS risk)**
+
+`registry.py` raw helpers (TCP, DNS, SNMP, NTP, SMTP) opened sockets with no
+throttle, backoff, or circuit-breaker, firing back-to-back on multi-port targets
+and tripping WAFs. Fixed:
+
+- Each module's `run()` that performs raw probes now calls `client_from_config(config)`
+  and gates every probe with `client.is_tripped(host)` / `client.throttle(host)`,
+  matching the pattern already used by `TlsEngine`.
+- `_safe_http_fingerprint()` now routes through `PoliteHttpClient.request()` when
+  a client is provided, gaining throttle + exponential backoff + circuit-breaker +
+  shared User-Agent for all DevOps, Kubernetes, and database HTTP fingerprint probes.
+- A tripped circuit breaker on a host stops all further raw probes to that host
+  in the same module run.
+- Removed the duplicated hardcoded User-Agent string from `_http_request()`; uses
+  the module-level `_BROWSER_UA` constant instead.
+
+### Housekeeping
+
+- Removed `portwise/intelligence/cve_placeholder.py` (deprecated re-export shim).
+- Bumped version `0.1.0` → `0.2.0`.
+
+### Previous fixpack (0.1.x → 0.2.0)
+
+- Confidence/category model: `apply_confidence()`, `apply_category_rules()`,
+  `apply_false_positive_rules()` pipeline.
+- CVE version-range matching with KEV gating (`cve_enrichment.py`,
+  `version_match.py`).
+- Rate-limiting HTTP/TLS probes via `PoliteHttpClient` (min-delay, jitter,
+  exponential backoff, per-host circuit breaker, request budget).
+- Signature-based page detection for HTTP engine (`signatures.py`).
+- Dark-theme HTML report with confidence/category badges.
+- OCSP stapling check removed (passive-only scope).
+
+---
+
 ## v0.1.0 - Initial MVP
 
 Initial pre-release MVP for PortWise, a safe, evidence-first VAPT intelligence and reporting tool.

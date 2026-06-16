@@ -5,7 +5,7 @@ from dataclasses import asdict
 from typing import Any
 
 from portwise.core.models import Finding, ModuleTarget
-from portwise.intelligence.false_positive import apply_false_positive_rules
+from portwise.intelligence.false_positive import apply_category_rules, apply_false_positive_rules
 from portwise.intelligence.risk_scoring import assign_priority
 from portwise.modules.registry import available_modules, module_targets_key
 from portwise.modules.results import ModuleResult
@@ -52,6 +52,7 @@ def execute_safe_modules(
                 continue
             result = module.execute(target_dict, config)
             for finding in result.findings:
+                apply_category_rules(finding)
                 apply_false_positive_rules(finding, context=str(config.get("context", "unknown")))
                 assign_priority(finding, context=str(config.get("context", "unknown")), internet_facing=bool(config.get("internet_facing", False)))
             findings.extend(result.findings)

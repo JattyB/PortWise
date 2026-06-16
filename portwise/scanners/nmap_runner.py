@@ -12,32 +12,48 @@ from portwise.core.service_groups import ServiceDetectionGroup, ports_to_arg
 from portwise.utils.files import ensure_dir, ensure_text
 
 
+# Read-only, safe NSE scripts that enrich service intelligence. These are added
+# on top of -sC because several (notably ssh2-enum-algos and the smb-*-security
+# scripts) are NOT in nmap's default script category, so the data they produce
+# was previously never collected.
+SAFE_NSE_SCRIPTS_TCP = (
+    "ssh2-enum-algos,ssh-hostkey,"
+    "smb-security-mode,smb2-security-mode,smb-os-discovery,smb2-time,"
+    "rdp-ntlm-info,rdp-enum-encryption,"
+    "ssl-enum-ciphers,ssl-cert,"
+    "ftp-anon,http-methods,http-server-header,http-title,banner"
+)
+SAFE_NSE_SCRIPTS_UDP = "snmp-info,snmp-sysdescr,dns-recursion,ntp-info"
+
+
 NMAP_TEMPLATES: dict[str, list[str]] = {
     "discovery": [
         "nmap", "-sn", "-PE", "-PS22,80,443,445,3389", "-PA80,443,445",
         "--reason", "-iL", "{targets}", "-oA", "{scans}/01_discovery",
     ],
     "tcp_top_1000": [
-        "nmap", "-sS", "--top-ports", "1000", "-T3", "--max-retries", "3",
-        "--max-rtt-timeout", "2s", "--host-timeout", "10m", "--reason",
+        "nmap", "-sS", "-Pn", "--top-ports", "1000", "-T4", "--max-retries", "3",
+        "--max-rtt-timeout", "2s", "--host-timeout", "30m", "--reason",
         "-iL", "{live_hosts}", "-oA", "{scans}/02_tcp_top_1000",
     ],
     "tcp_full": [
-        "nmap", "-sS", "-p-", "-T3", "--min-rate", "500", "--max-retries", "3",
-        "--max-rtt-timeout", "2s", "--host-timeout", "20m", "--reason",
-        "-iL", "{live_hosts}", "-oA", "{scans}/03_tcp_full",
+        # -Pn so ICMP-filtered-but-alive hosts are not dropped; no aggressive
+        # --host-timeout (it was silently skipping heavily-filtered hosts on -p-).
+        "nmap", "-sS", "-Pn", "-p-", "-T4", "--min-rate", "1000", "--max-retries", "2",
+        "--reason", "-iL", "{live_hosts}", "-oA", "{scans}/03_tcp_full",
     ],
     "tcp_services": [
-        "nmap", "-sV", "--version-light", "-sC", "--reason", "-p",
+        "nmap", "-sV", "--version-light", "-sC", "-Pn", "--script", SAFE_NSE_SCRIPTS_TCP,
+        "--script-timeout", "20s", "--reason", "-p",
         "{open_tcp_ports}", "-iL", "{live_hosts}", "-oA", "{scans}/04_tcp_services",
     ],
     "udp_top_1000": [
-        "nmap", "-sU", "--top-ports", "1000", "-T3", "--max-retries", "2",
-        "--max-rtt-timeout", "3s", "--host-timeout", "30m", "--reason",
+        "nmap", "-sU", "-Pn", "--top-ports", "1000", "-T4", "--max-retries", "2",
+        "--max-rtt-timeout", "3s", "--host-timeout", "45m", "--reason",
         "-iL", "{live_hosts}", "-oA", "{scans}/06_udp_top_1000",
     ],
     "udp_services": [
-        "nmap", "-sU", "-sV", "--version-light", "--reason", "-p",
+        "nmap", "-sU", "-sV", "-Pn", "--version-light", "--reason", "-p",
         "{open_udp_ports}", "-iL", "{live_hosts}", "-oA", "{scans}/07_udp_services",
     ],
 }
@@ -162,7 +178,12 @@ class NmapRunner:
         ])
         if protocol == "tcp":
             base.append("-sC")
+            base.extend(["--script", SAFE_NSE_SCRIPTS_TCP])
+        else:
+            base.extend(["--script", SAFE_NSE_SCRIPTS_UDP])
         base.extend([
+            "--script-timeout",
+            "20s",
             "--reason",
             "-p",
             ports_to_arg(group.ports),

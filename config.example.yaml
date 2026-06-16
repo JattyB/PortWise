@@ -31,6 +31,33 @@ scanner:
   snmp_default_community_check: true
   ftp_anonymous_check: true
 
+  # Read-only native fallbacks used when nmap NSE evidence is unavailable.
+  # ssh_algo_probe: perform an SSH KEXINIT handshake to enumerate weak
+  #   KEX/cipher/MAC/host-key algorithms (no authentication).
+  # smb_native_probe: perform an SMB NEGOTIATE handshake to detect SMBv1
+  #   support and message-signing posture (no authentication, no tree connect).
+  # -Pn behaviour: treat every supplied target as live (port-scan hosts even if
+  # they block ICMP). Default on; disable for very large ranges.
+  assume_hosts_up: true
+  # Web crawl: same-origin GET-only crawl for endpoints/JS/secrets on web ports.
+  web_crawl:
+    enabled: true
+    max_pages: 8
+    max_js: 10
+  ssh_algo_probe: true
+  smb_native_probe: true
+
+http_politeness:
+  min_delay_seconds: 0.5
+  jitter_seconds: [0.1, 0.4]
+  max_retries: 2
+  backoff_base_seconds: 1.0
+  backoff_max_seconds: 30.0
+  circuit_breaker_threshold: 3
+  max_requests_per_host: 30
+  user_agent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+  respect_retry_after: true
+
 http:
   max_redirects: 3
   max_body_bytes: 262144
@@ -56,6 +83,14 @@ cve:
   cache_dir: cache/cve
   timeout: 10
   nvd_api_key_env: PORTWISE_NVD_API_KEY
+  # False-positive controls (recommended defaults shown):
+  #   include_keyword_only: emit CVEs that only matched an NVD keyword search with
+  #     no CPE/version confirmation. These were the biggest source of noise, so
+  #     they are suppressed by default. Set true only when triaging manually.
+  #   collapse_version_unknown: fold product-matched-but-version-unconfirmed CVEs
+  #     into a single "needs manual validation" finding per service.
+  include_keyword_only: false
+  collapse_version_unknown: true
 
 reports:
   formats:
@@ -119,6 +154,7 @@ profiles:
       tls: true
       http: true
       exposure: true
+      plaintext: true
       smb_safe: false
       ssh: true
       rdp: true
@@ -132,23 +168,26 @@ profiles:
       kubernetes: true
       mail: true
       vpn: true
-      cve_enrichment: false
+      cve_enrichment: true
       confidence_scoring: true
       false_positive_scoring: true
     reports:
       - json
 
   internal-vapt:
-    description: Internal authorized review with moderate exposure severity defaults.
+    description: Internal authorized review with full active checks.
     context: internal
+    validation_level: full
     nmap_steps:
       - discovery
       - tcp_top_1000
+      - tcp_full
       - tcp_services
     modules:
       tls: true
       http: true
       exposure: true
+      plaintext: true
       smb_safe: true
       ssh: true
       rdp: true
@@ -162,15 +201,16 @@ profiles:
       kubernetes: true
       mail: true
       vpn: true
-      cve_enrichment: false
+      cve_enrichment: true
       confidence_scoring: true
       false_positive_scoring: true
     reports:
       - json
 
   external-vapt:
-    description: External perimeter review with higher exposure severity defaults.
+    description: External perimeter review with full active checks.
     context: external
+    validation_level: full
     nmap_steps:
       - discovery
       - tcp_top_1000
@@ -179,6 +219,7 @@ profiles:
       tls: true
       http: true
       exposure: true
+      plaintext: true
       smb_safe: false
       ssh: true
       rdp: true
@@ -192,15 +233,16 @@ profiles:
       kubernetes: true
       mail: true
       vpn: true
-      cve_enrichment: false
+      cve_enrichment: true
       confidence_scoring: true
       false_positive_scoring: true
     reports:
       - json
 
   full-vapt:
-    description: Full safe VAPT discovery, fingerprinting, native validation, and JSON reporting.
+    description: Full VAPT — discovery, full port scan, fingerprinting, all module checks, active web crawl, CVE mapping. Same command works internal or external.
     context: unknown
+    validation_level: full
     nmap_steps:
       - discovery
       - tcp_top_1000
@@ -231,11 +273,13 @@ profiles:
       mail: true
       vpn: true
       exposure: true
+      plaintext: true
       cve_enrichment: true
       confidence_scoring: true
       false_positive_scoring: true
     reports:
       - json
+      - html
 
   offline-analysis:
     description: Parse existing Nmap XML and produce normalized findings without active scanning.
@@ -245,6 +289,7 @@ profiles:
       tls: false
       http: false
       exposure: true
+      plaintext: true
       smb_safe: false
       cve_enrichment: false
       confidence_scoring: true

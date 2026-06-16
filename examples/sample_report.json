@@ -1,2192 +1,345 @@
 {
-  "assets": [
-    {
-      "hostnames": [
-        "app.example.test"
-      ],
-      "ip": "192.0.2.10",
-      "ipv4": "192.0.2.10",
-      "ipv6": null,
-      "services": [
-        {
-          "confidence": 10,
-          "cpes": [
-            "cpe:/a:apache:tomcat:9.0.1"
-          ],
-          "extrainfo": "",
-          "host": "192.0.2.10",
-          "hostname": "app.example.test",
-          "method": "probed",
-          "port": 8080,
-          "product": "Apache Tomcat",
-          "protocol": "tcp",
-          "reason": "syn-ack",
-          "scripts": {
-            "http-title": "Tomcat Manager"
-          },
-          "service_name": "http",
-          "source_file": "examples\\sample_nmap.xml",
-          "state": "open",
-          "tunnel": null,
-          "version": "9.0.1"
-        },
-        {
-          "confidence": 10,
-          "cpes": [],
-          "extrainfo": "",
-          "host": "192.0.2.10",
-          "hostname": "app.example.test",
-          "method": "probed",
-          "port": 8443,
-          "product": "nginx",
-          "protocol": "tcp",
-          "reason": "syn-ack",
-          "scripts": {},
-          "service_name": "https",
-          "source_file": "examples\\sample_nmap.xml",
-          "state": "open",
-          "tunnel": "ssl",
-          "version": "1.24.0"
-        },
-        {
-          "confidence": 10,
-          "cpes": [],
-          "extrainfo": "protocol 2.0",
-          "host": "192.0.2.10",
-          "hostname": "app.example.test",
-          "method": "probed",
-          "port": 2222,
-          "product": "OpenSSH",
-          "protocol": "tcp",
-          "reason": "syn-ack",
-          "scripts": {},
-          "service_name": "ssh",
-          "source_file": "examples\\sample_nmap.xml",
-          "state": "open",
-          "tunnel": null,
-          "version": "9.2"
-        },
-        {
-          "confidence": 10,
-          "cpes": [],
-          "extrainfo": "",
-          "host": "192.0.2.10",
-          "hostname": "app.example.test",
-          "method": "probed",
-          "port": 2121,
-          "product": "vsftpd",
-          "protocol": "tcp",
-          "reason": "syn-ack",
-          "scripts": {},
-          "service_name": "ftp",
-          "source_file": "examples\\sample_nmap.xml",
-          "state": "open",
-          "tunnel": null,
-          "version": "3.0.5"
-        },
-        {
-          "confidence": 10,
-          "cpes": [],
-          "extrainfo": "",
-          "host": "192.0.2.10",
-          "hostname": "app.example.test",
-          "method": "probed",
-          "port": 445,
-          "product": "Samba smbd",
-          "protocol": "tcp",
-          "reason": "syn-ack",
-          "scripts": {},
-          "service_name": "microsoft-ds",
-          "source_file": "examples\\sample_nmap.xml",
-          "state": "open",
-          "tunnel": null,
-          "version": "4.18"
-        },
-        {
-          "confidence": 10,
-          "cpes": [],
-          "extrainfo": "",
-          "host": "192.0.2.10",
-          "hostname": "app.example.test",
-          "method": "probed",
-          "port": 161,
-          "product": "Net-SNMP",
-          "protocol": "udp",
-          "reason": "udp-response",
-          "scripts": {},
-          "service_name": "snmp",
-          "source_file": "examples\\sample_nmap.xml",
-          "state": "open",
-          "tunnel": null,
-          "version": "5.9"
-        },
-        {
-          "confidence": 3,
-          "cpes": [],
-          "extrainfo": "",
-          "host": "192.0.2.10",
-          "hostname": "app.example.test",
-          "method": "table",
-          "port": 500,
-          "product": "",
-          "protocol": "udp",
-          "reason": "no-response",
-          "scripts": {},
-          "service_name": "isakmp",
-          "source_file": "examples\\sample_nmap.xml",
-          "state": "open|filtered",
-          "tunnel": null,
-          "version": ""
-        }
-      ],
-      "status": "up"
-    },
-    {
-      "hostnames": [],
-      "ip": "192.0.2.20",
-      "ipv4": "192.0.2.20",
-      "ipv6": null,
-      "services": [],
-      "status": "down"
-    }
-  ],
-  "commands": [],
-  "dead_hosts": [
-    "192.0.2.20"
-  ],
-  "evidence": [
-    {
-      "data": {
-        "port": 8080,
-        "product": "Apache Tomcat",
-        "service": "http"
-      },
-      "description": "Service fingerprint matched exposure keyword 'tomcat'.",
-      "id": "2243c9c7-a636-4084-bdd9-df07efec9576",
-      "source": "nmap-service-fingerprint",
-      "strength": 2
-    },
-    {
-      "data": {
-        "port": 2222,
-        "product": "OpenSSH",
-        "service": "ssh"
-      },
-      "description": "Service fingerprint matched exposure keyword 'ssh'.",
-      "id": "0f3c46e8-3d09-48c0-b2d3-dd9c7d9fe827",
-      "source": "nmap-service-fingerprint",
-      "strength": 2
-    },
-    {
-      "data": {
-        "port": 2121,
-        "product": "vsftpd",
-        "service": "ftp"
-      },
-      "description": "Service fingerprint matched exposure keyword 'ftp'.",
-      "id": "a944b643-eb1a-4df5-b948-70f3a1ec5ca3",
-      "source": "nmap-service-fingerprint",
-      "strength": 2
-    },
-    {
-      "data": {
-        "port": 445,
-        "product": "Samba smbd",
-        "service": "microsoft-ds"
-      },
-      "description": "Service fingerprint matched exposure keyword 'smb'.",
-      "id": "a239ef17-7c96-42aa-a25e-d6f5a5477cba",
-      "source": "nmap-service-fingerprint",
-      "strength": 2
-    },
-    {
-      "data": {
-        "port": 161,
-        "product": "Net-SNMP",
-        "service": "snmp"
-      },
-      "description": "Service fingerprint matched exposure keyword 'snmp'.",
-      "id": "38010277-c5b5-44dd-aa05-78b932d3341a",
-      "source": "nmap-service-fingerprint",
-      "strength": 2
-    },
-    {
-      "data": {
-        "confidence": 10,
-        "cpe": [
-          "cpe:/a:apache:tomcat:9.0.1"
-        ],
-        "host": "192.0.2.10",
-        "port": 8080,
-        "product": "Apache Tomcat",
-        "protocol": "tcp",
-        "routing_reason": "HTTP/web fingerprint matched.",
-        "service": "http",
-        "version": "9.0.1"
-      },
-      "description": "Service fingerprint matched exposure keyword 'tomcat'.",
-      "id": "0c164ccd-234a-4d89-9436-95b07e50abd5",
-      "source": "module:exposure",
-      "strength": 2
-    },
-    {
-      "data": {
-        "confidence": 10,
-        "cpe": [],
-        "host": "192.0.2.10",
-        "port": 445,
-        "product": "Samba smbd",
-        "protocol": "tcp",
-        "routing_reason": "SMB fingerprint or fallback port matched.",
-        "service": "microsoft-ds",
-        "version": "4.18"
-      },
-      "description": "Service fingerprint matched exposure keyword 'smb'.",
-      "id": "5b8d8c62-81ae-423a-980b-efe244a293b7",
-      "source": "module:exposure",
-      "strength": 2
-    },
-    {
-      "data": {
-        "confidence": 10,
-        "cpe": [],
-        "host": "192.0.2.10",
-        "port": 2222,
-        "product": "OpenSSH",
-        "protocol": "tcp",
-        "routing_reason": "SSH fingerprint matched.",
-        "service": "ssh",
-        "version": "9.2"
-      },
-      "description": "Service fingerprint matched exposure keyword 'ssh'.",
-      "id": "7deec28a-5236-4cf0-bcc2-feb0cb47bf20",
-      "source": "module:exposure",
-      "strength": 2
-    },
-    {
-      "data": {
-        "confidence": 10,
-        "cpe": [],
-        "host": "192.0.2.10",
-        "port": 2121,
-        "product": "vsftpd",
-        "protocol": "tcp",
-        "routing_reason": "FTP fingerprint matched.",
-        "service": "ftp",
-        "version": "3.0.5"
-      },
-      "description": "Service fingerprint matched exposure keyword 'ftp'.",
-      "id": "990f0088-508c-46e1-8ade-dfd78e83e1f8",
-      "source": "module:exposure",
-      "strength": 2
-    },
-    {
-      "data": {
-        "confidence": 10,
-        "cpe": [],
-        "host": "192.0.2.10",
-        "port": 161,
-        "product": "Net-SNMP",
-        "protocol": "udp",
-        "routing_reason": "SNMP fingerprint or UDP 161 fallback matched.",
-        "service": "snmp",
-        "version": "5.9"
-      },
-      "description": "Service fingerprint matched exposure keyword 'snmp'.",
-      "id": "09757085-0cf0-4fad-99ff-f10369a3d9c1",
-      "source": "module:exposure",
-      "strength": 2
-    }
-  ],
-  "evidence_by_module": {},
-  "failed_checks": [],
+  "project": "Example Corp — Q2 2026 Infrastructure Pentest",
+  "profile": "full-vapt",
+  "started_at": "2026-05-15T08:00:00+00:00",
+  "finished_at": "2026-05-15T14:00:00+00:00",
   "findings": [
     {
-      "asset": "192.0.2.10",
-      "confidence": "Needs Manual Validation",
-      "created_at": "2026-05-16T19:54:28.294253+00:00",
-      "cve_id": null,
-      "cvss": null,
-      "description": "Tomcat Manager exposure should be restricted.",
-      "epss": null,
+      "id": "f001",
+      "title": "Exposed Environment File",
+      "severity": "critical",
+      "asset": "192.168.10.50",
+      "port": 80,
+      "protocol": "tcp",
+      "service": "http",
+      "confidence": "Confirmed",
+      "category": "vulnerability",
+      "cvss": 9.1,
+      "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:N",
+      "description": "The file /.env is publicly accessible over HTTP on 192.168.10.50. The response body contained plaintext database connection strings, third-party API keys, and application secrets. Any unauthenticated attacker with network access to port 80 can retrieve this file.",
+      "recommendation": "Remove the .env file from the document root, or configure the web server to deny direct access to dotfiles. Rotate all credentials and secrets that were present in the file immediately.",
+      "module": "http",
+      "priority": "P1",
+      "false_positive_risk": "low",
+      "evidence_strength": 8,
       "evidence": [
         {
-          "data": {
-            "port": 8080,
-            "product": "Apache Tomcat",
-            "service": "http"
-          },
-          "description": "Service fingerprint matched exposure keyword 'tomcat'.",
-          "id": "2243c9c7-a636-4084-bdd9-df07efec9576",
-          "source": "nmap-service-fingerprint",
-          "strength": 2
+          "source": "http-probe",
+          "description": "GET /.env returned HTTP 200 OK. Response body (3,412 bytes) contained DB_CONNECTION=mysql, APP_KEY=base64:... and STRIPE_SECRET_KEY.",
+          "strength": 5,
+          "data": {}
         }
       ],
-      "evidence_strength": 2,
-      "false_positive_risk": "medium",
-      "id": "dbf41d8d-a005-4e9c-8728-8cd503ed71ac",
-      "kev": false,
-      "manual_validation": false,
-      "module": null,
-      "port": 8080,
-      "priority": "P5",
-      "protocol": "tcp",
-      "recommendation": "Validate business requirement, restrict network access, and ensure hardened configuration.",
-      "references": [],
-      "run_id": null,
-      "service": "http",
-      "severity": "medium",
-      "status": "open",
-      "tags": [
-        "exposure",
-        "unknown"
-      ],
-      "title": "Exposed TOMCAT Service Needs Owner Validation",
-      "type": "exposure"
+      "tags": ["credential-exposure", "information-disclosure"],
+      "status": "open"
     },
     {
-      "asset": "192.0.2.10",
-      "confidence": "Needs Manual Validation",
-      "created_at": "2026-05-16T19:54:28.294253+00:00",
-      "cve_id": null,
-      "cvss": null,
-      "description": "SSH exposure should be owner-approved and hardened.",
-      "epss": null,
+      "id": "f002",
+      "title": "Unauthenticated Redis Access",
+      "severity": "critical",
+      "asset": "192.168.10.55",
+      "port": 6379,
+      "protocol": "tcp",
+      "service": "redis",
+      "confidence": "Confirmed",
+      "category": "vulnerability",
+      "cvss": 9.8,
+      "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H",
+      "description": "Redis on 192.168.10.55:6379 accepts connections without authentication. An attacker can read all stored keys, write arbitrary data, flush the database, or achieve remote code execution via the CONFIG SET dir/dbfilename mechanism.",
+      "recommendation": "Bind Redis to 127.0.0.1 or a management VLAN interface only. Enable requirepass authentication. Disable the CONFIG command for untrusted clients. Place the service behind a firewall rule permitting only authorised application servers.",
+      "module": "redis",
+      "priority": "P1",
+      "false_positive_risk": "low",
+      "evidence_strength": 9,
       "evidence": [
         {
-          "data": {
-            "port": 2222,
-            "product": "OpenSSH",
-            "service": "ssh"
-          },
-          "description": "Service fingerprint matched exposure keyword 'ssh'.",
-          "id": "0f3c46e8-3d09-48c0-b2d3-dd9c7d9fe827",
-          "source": "nmap-service-fingerprint",
-          "strength": 2
+          "source": "native-banner",
+          "description": "TCP connection to 6379 succeeded; PING returned +PONG; KEYS * returned 247 keys without authentication.",
+          "strength": 5,
+          "data": {}
         }
       ],
-      "evidence_strength": 2,
-      "false_positive_risk": "medium",
-      "id": "f7cb453a-6d3d-4f61-be42-0f3316576267",
-      "kev": false,
-      "manual_validation": false,
-      "module": null,
-      "port": 2222,
-      "priority": "P5",
+      "tags": ["unauthenticated-access", "data-exposure"],
+      "status": "open"
+    },
+    {
+      "id": "f003",
+      "title": "RDP NLA Disabled",
+      "severity": "critical",
+      "asset": "192.168.10.60",
+      "port": 3389,
       "protocol": "tcp",
-      "recommendation": "Validate business requirement, restrict network access, and ensure hardened configuration.",
-      "references": [],
-      "run_id": null,
+      "service": "ms-wbt-server",
+      "confidence": "Confirmed",
+      "category": "vulnerability",
+      "cvss": 9.8,
+      "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H",
+      "description": "Remote Desktop Protocol on 192.168.10.60 does not enforce Network Level Authentication. The RDP greeting is presented before any credential challenge, exposing the system to pre-authentication exploits.",
+      "recommendation": "Enable Network Level Authentication on all RDP-accessible hosts via Group Policy. Restrict RDP access to authorised management networks via firewall ACLs.",
+      "module": "rdp",
+      "priority": "P1",
+      "false_positive_risk": "low",
+      "evidence_strength": 7,
+      "evidence": [
+        {
+          "source": "nse-rdp-ntlm-info",
+          "description": "rdp-ntlm-info script returned Target_Name: EXAMPLECORP, Product_Version: 10.0.19041. NTLMSSP flags indicate NLA not enforced.",
+          "strength": 5,
+          "data": {}
+        }
+      ],
+      "tags": ["remote-access", "pre-auth"],
+      "status": "open"
+    },
+    {
+      "id": "f004",
+      "title": "SMBv1 Enabled",
+      "severity": "high",
+      "asset": "192.168.10.60",
+      "port": 445,
+      "protocol": "tcp",
+      "service": "microsoft-ds",
+      "confidence": "Confirmed",
+      "category": "vulnerability",
+      "cvss": 8.1,
+      "cvss_vector": "CVSS:3.1/AV:N/AC:H/PR:N/UI:N/S:U/C:H/I:H/A:H",
+      "description": "SMBv1 is enabled on 192.168.10.60. This legacy protocol contains critical vulnerabilities including MS17-010 (EternalBlue), enabling unauthenticated remote code execution. SMBv1 is deprecated.",
+      "recommendation": "Disable SMBv1 on all Windows hosts via PowerShell: Set-SmbServerConfiguration -EnableSMB1Protocol $false. Block SMBv1 traffic at the network layer.",
+      "module": "smb",
+      "priority": "P2",
+      "false_positive_risk": "low",
+      "evidence_strength": 7,
+      "evidence": [
+        {
+          "source": "nse-smb-security-mode",
+          "description": "smb-security-mode script confirmed SMBv1 is negotiated. SMBv2 is also present but v1 is not disabled.",
+          "strength": 5,
+          "data": {}
+        }
+      ],
+      "tags": ["smb", "legacy-protocol"],
+      "status": "open"
+    },
+    {
+      "id": "f005",
+      "title": "Known Vulnerable Component Detected",
+      "severity": "high",
+      "asset": "192.168.10.50",
+      "port": 80,
+      "protocol": "tcp",
+      "service": "http",
+      "confidence": "Likely",
+      "category": "vulnerability",
+      "cvss": 7.5,
+      "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:N/A:N",
+      "cve_id": "CVE-2023-44487",
+      "description": "nginx 1.18.0 on 192.168.10.50 matches the version range affected by CVE-2023-44487 (HTTP/2 Rapid Reset). This allows unauthenticated remote attackers to cause denial of service.",
+      "recommendation": "Upgrade nginx to 1.25.3 or later. As a temporary mitigation, limit HTTP/2 connection concurrency.",
+      "module": "cve",
+      "priority": "P2",
+      "false_positive_risk": "low",
+      "evidence_strength": 5,
+      "cves": [
+        {
+          "cve_id": "CVE-2023-44487",
+          "cvss_score": 7.5,
+          "epss_score": 0.958,
+          "kev": true,
+          "description": "The HTTP/2 protocol allows a denial of service because request cancellation can reset many streams quickly, as exploited in the wild.",
+          "references": [
+            "https://nvd.nist.gov/vuln/detail/CVE-2023-44487",
+            "https://www.cisa.gov/known-exploited-vulnerabilities-catalog"
+          ]
+        }
+      ],
+      "evidence": [
+        {
+          "source": "cve-enrichment",
+          "description": "nginx 1.18.0 version-range matched against CVE-2023-44487 vulnerable range (< 1.25.3).",
+          "strength": 4,
+          "data": {}
+        }
+      ],
+      "tags": ["cve", "version-matched"],
+      "status": "open"
+    },
+    {
+      "id": "f006",
+      "title": "Expired TLS Certificate",
+      "severity": "medium",
+      "asset": "192.168.10.50",
+      "port": 443,
+      "protocol": "tcp",
+      "service": "https",
+      "confidence": "Confirmed",
+      "category": "vulnerability",
+      "cvss": 5.3,
+      "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:R/S:U/C:L/I:L/A:N",
+      "description": "The TLS certificate on 192.168.10.50:443 expired on 2026-01-15. Clients enforcing certificate validity will reject the connection.",
+      "recommendation": "Renew the certificate immediately. Configure automated renewal to prevent recurrence.",
+      "module": "tls",
+      "priority": "P3",
+      "false_positive_risk": "low",
+      "evidence_strength": 6,
+      "evidence": [
+        {
+          "source": "tls-cert-check",
+          "description": "Certificate CN=example-corp.internal, notAfter=2026-01-15T00:00:00Z (expired 127 days ago).",
+          "strength": 5,
+          "data": {}
+        }
+      ],
+      "tags": ["tls", "certificate"],
+      "status": "open"
+    },
+    {
+      "id": "f007",
+      "title": "TLS 1.0 Supported",
+      "severity": "medium",
+      "asset": "192.168.10.50",
+      "port": 443,
+      "protocol": "tcp",
+      "service": "https",
+      "confidence": "Confirmed",
+      "category": "vulnerability",
+      "cvss": 5.9,
+      "cvss_vector": "CVSS:3.1/AV:N/AC:H/PR:N/UI:N/S:U/C:H/I:N/A:N",
+      "description": "TLS 1.0 is offered by 192.168.10.50:443. This protocol version has known weaknesses including BEAST and POODLE and was deprecated by RFC 8996.",
+      "recommendation": "Disable TLS 1.0 and TLS 1.1. Enable only TLS 1.2 and TLS 1.3.",
+      "module": "tls",
+      "priority": "P3",
+      "false_positive_risk": "low",
+      "evidence_strength": 5,
+      "evidence": [
+        {
+          "source": "nse-ssl-enum-ciphers",
+          "description": "ssl-enum-ciphers listed TLSv1.0 with cipher suite TLS_RSA_WITH_AES_128_CBC_SHA.",
+          "strength": 5,
+          "data": {}
+        }
+      ],
+      "tags": ["tls", "deprecated-protocol"],
+      "status": "open"
+    },
+    {
+      "id": "f008",
+      "title": "Weak SSH Key Exchange Algorithm",
+      "severity": "medium",
+      "asset": "192.168.10.55",
+      "port": 22,
+      "protocol": "tcp",
       "service": "ssh",
-      "severity": "low",
-      "status": "open",
-      "tags": [
-        "exposure",
-        "unknown"
-      ],
-      "title": "Exposed SSH Service Needs Owner Validation",
-      "type": "exposure"
-    },
-    {
-      "asset": "192.0.2.10",
-      "confidence": "Needs Manual Validation",
-      "created_at": "2026-05-16T19:54:28.294253+00:00",
-      "cve_id": null,
-      "cvss": null,
-      "description": "FTP exposure may disclose data or permit weak authentication paths.",
-      "epss": null,
+      "confidence": "Confirmed",
+      "category": "vulnerability",
+      "cvss": 5.9,
+      "cvss_vector": "CVSS:3.1/AV:N/AC:H/PR:N/UI:N/S:U/C:H/I:N/A:N",
+      "description": "The SSH server on 192.168.10.55 advertises weak key exchange algorithms including diffie-hellman-group1-sha1 (Logjam-affected) and diffie-hellman-group14-sha1.",
+      "recommendation": "Remove weak KEX algorithms from sshd_config. Set KexAlgorithms to curve25519-sha256,ecdh-sha2-nistp256 and reload sshd.",
+      "module": "ssh",
+      "priority": "P3",
+      "false_positive_risk": "low",
+      "evidence_strength": 5,
       "evidence": [
         {
-          "data": {
-            "port": 2121,
-            "product": "vsftpd",
-            "service": "ftp"
-          },
-          "description": "Service fingerprint matched exposure keyword 'ftp'.",
-          "id": "a944b643-eb1a-4df5-b948-70f3a1ec5ca3",
-          "source": "nmap-service-fingerprint",
-          "strength": 2
+          "source": "nse-ssh2-enum-algos",
+          "description": "ssh2-enum-algos returned kex_algorithms: [diffie-hellman-group1-sha1, diffie-hellman-group14-sha1, curve25519-sha256].",
+          "strength": 5,
+          "data": {}
         }
       ],
-      "evidence_strength": 2,
-      "false_positive_risk": "medium",
-      "id": "be1ba16c-784b-4218-a9c1-67a9a04c5ec3",
-      "kev": false,
-      "manual_validation": false,
-      "module": null,
-      "port": 2121,
-      "priority": "P5",
-      "protocol": "tcp",
-      "recommendation": "Validate business requirement, restrict network access, and ensure hardened configuration.",
-      "references": [],
-      "run_id": null,
-      "service": "ftp",
+      "tags": ["ssh", "weak-algorithm"],
+      "status": "open"
+    },
+    {
+      "id": "f009",
+      "title": "DNS Recursion Enabled",
       "severity": "medium",
-      "status": "open",
-      "tags": [
-        "exposure",
-        "unknown"
-      ],
-      "title": "Exposed FTP Service Needs Owner Validation",
-      "type": "exposure"
-    },
-    {
-      "asset": "192.0.2.10",
-      "confidence": "Needs Manual Validation",
-      "created_at": "2026-05-16T19:54:28.294253+00:00",
-      "cve_id": null,
-      "cvss": null,
-      "description": "SMB exposure should be restricted to trusted networks.",
-      "epss": null,
-      "evidence": [
-        {
-          "data": {
-            "port": 445,
-            "product": "Samba smbd",
-            "service": "microsoft-ds"
-          },
-          "description": "Service fingerprint matched exposure keyword 'smb'.",
-          "id": "a239ef17-7c96-42aa-a25e-d6f5a5477cba",
-          "source": "nmap-service-fingerprint",
-          "strength": 2
-        }
-      ],
-      "evidence_strength": 2,
-      "false_positive_risk": "medium",
-      "id": "25e56edf-2844-4610-b11f-29621f9d6ba8",
-      "kev": false,
-      "manual_validation": false,
-      "module": null,
-      "port": 445,
-      "priority": "P5",
-      "protocol": "tcp",
-      "recommendation": "Validate business requirement, restrict network access, and ensure hardened configuration.",
-      "references": [],
-      "run_id": null,
-      "service": "microsoft-ds",
-      "severity": "medium",
-      "status": "open",
-      "tags": [
-        "exposure",
-        "unknown"
-      ],
-      "title": "Exposed SMB Service Needs Owner Validation",
-      "type": "exposure"
-    },
-    {
-      "asset": "192.0.2.10",
-      "confidence": "Needs Manual Validation",
-      "created_at": "2026-05-16T19:54:28.294253+00:00",
-      "cve_id": null,
-      "cvss": null,
-      "description": "SNMP exposure can disclose sensitive device information.",
-      "epss": null,
-      "evidence": [
-        {
-          "data": {
-            "port": 161,
-            "product": "Net-SNMP",
-            "service": "snmp"
-          },
-          "description": "Service fingerprint matched exposure keyword 'snmp'.",
-          "id": "38010277-c5b5-44dd-aa05-78b932d3341a",
-          "source": "nmap-service-fingerprint",
-          "strength": 2
-        }
-      ],
-      "evidence_strength": 2,
-      "false_positive_risk": "medium",
-      "id": "8ebf1fb4-3387-4492-969d-8cbf09f1b2d2",
-      "kev": false,
-      "manual_validation": false,
-      "module": null,
-      "port": 161,
-      "priority": "P5",
+      "asset": "192.168.10.1",
+      "port": 53,
       "protocol": "udp",
-      "recommendation": "Validate business requirement, restrict network access, and ensure hardened configuration.",
-      "references": [],
-      "run_id": null,
-      "service": "snmp",
-      "severity": "medium",
-      "status": "open",
-      "tags": [
-        "exposure",
-        "unknown"
-      ],
-      "title": "Exposed SNMP Service Needs Owner Validation",
-      "type": "exposure"
-    },
-    {
-      "asset": "192.0.2.10",
-      "confidence": "Informational",
-      "created_at": "2026-05-16T19:54:28.294253+00:00",
-      "cve_id": null,
-      "cvss": null,
-      "description": "A potentially sensitive service is reachable and should be validated against approved exposure policy.",
-      "epss": null,
-      "evidence": [
-        {
-          "data": {
-            "confidence": 10,
-            "cpe": [
-              "cpe:/a:apache:tomcat:9.0.1"
-            ],
-            "host": "192.0.2.10",
-            "port": 8080,
-            "product": "Apache Tomcat",
-            "protocol": "tcp",
-            "routing_reason": "HTTP/web fingerprint matched.",
-            "service": "http",
-            "version": "9.0.1"
-          },
-          "description": "Service fingerprint matched exposure keyword 'tomcat'.",
-          "id": "0c164ccd-234a-4d89-9436-95b07e50abd5",
-          "source": "module:exposure",
-          "strength": 2
-        }
-      ],
-      "evidence_strength": 2,
-      "false_positive_risk": "contextual",
-      "id": "601731eb-1cd2-4871-b2e5-7c8f583dc67b",
-      "kev": false,
-      "manual_validation": true,
-      "module": "exposure",
-      "port": 8080,
-      "priority": "P3",
-      "protocol": "tcp",
-      "recommendation": "Confirm business need, restrict network access, and harden configuration.",
-      "references": [],
-      "run_id": null,
-      "service": "http",
-      "severity": "medium",
-      "status": "open",
-      "tags": [],
-      "title": "Exposed TOMCAT Service",
-      "type": "Needs Owner Validation"
-    },
-    {
-      "asset": "192.0.2.10",
-      "confidence": "Informational",
-      "created_at": "2026-05-16T19:54:28.294253+00:00",
-      "cve_id": null,
-      "cvss": null,
-      "description": "A potentially sensitive service is reachable and should be validated against approved exposure policy.",
-      "epss": null,
-      "evidence": [
-        {
-          "data": {
-            "confidence": 10,
-            "cpe": [],
-            "host": "192.0.2.10",
-            "port": 445,
-            "product": "Samba smbd",
-            "protocol": "tcp",
-            "routing_reason": "SMB fingerprint or fallback port matched.",
-            "service": "microsoft-ds",
-            "version": "4.18"
-          },
-          "description": "Service fingerprint matched exposure keyword 'smb'.",
-          "id": "5b8d8c62-81ae-423a-980b-efe244a293b7",
-          "source": "module:exposure",
-          "strength": 2
-        }
-      ],
-      "evidence_strength": 2,
-      "false_positive_risk": "contextual",
-      "id": "b55a9811-7f19-4e6b-a8ad-2eef04f074a6",
-      "kev": false,
-      "manual_validation": true,
-      "module": "exposure",
-      "port": 445,
-      "priority": "P3",
-      "protocol": "tcp",
-      "recommendation": "Confirm business need, restrict network access, and harden configuration.",
-      "references": [],
-      "run_id": null,
-      "service": "microsoft-ds",
-      "severity": "medium",
-      "status": "open",
-      "tags": [],
-      "title": "Exposed SMB Service",
-      "type": "Needs Owner Validation"
-    },
-    {
-      "asset": "192.0.2.10",
-      "confidence": "Informational",
-      "created_at": "2026-05-16T19:54:28.295254+00:00",
-      "cve_id": null,
-      "cvss": null,
-      "description": "A potentially sensitive service is reachable and should be validated against approved exposure policy.",
-      "epss": null,
-      "evidence": [
-        {
-          "data": {
-            "confidence": 10,
-            "cpe": [],
-            "host": "192.0.2.10",
-            "port": 2222,
-            "product": "OpenSSH",
-            "protocol": "tcp",
-            "routing_reason": "SSH fingerprint matched.",
-            "service": "ssh",
-            "version": "9.2"
-          },
-          "description": "Service fingerprint matched exposure keyword 'ssh'.",
-          "id": "7deec28a-5236-4cf0-bcc2-feb0cb47bf20",
-          "source": "module:exposure",
-          "strength": 2
-        }
-      ],
-      "evidence_strength": 2,
-      "false_positive_risk": "contextual",
-      "id": "1ff3c859-b2d1-4e6a-a3e8-fa072fb2735e",
-      "kev": false,
-      "manual_validation": true,
-      "module": "exposure",
-      "port": 2222,
+      "service": "dns",
+      "confidence": "Possible",
+      "category": "vulnerability",
+      "cvss": 5.3,
+      "description": "The DNS server at 192.168.10.1 appears to allow recursive queries from arbitrary sources. Open resolvers can be abused as amplification reflectors in UDP-based DDoS attacks.",
+      "recommendation": "Restrict recursive queries to authorised client IP ranges. Deploy Response Rate Limiting (RRL).",
+      "module": "dns",
       "priority": "P4",
-      "protocol": "tcp",
-      "recommendation": "Confirm business need, restrict network access, and harden configuration.",
-      "references": [],
-      "run_id": null,
-      "service": "ssh",
+      "false_positive_risk": "medium",
+      "evidence_strength": 3,
+      "evidence": [
+        {
+          "source": "dns-probe",
+          "description": "A recursive query for google.com returned a valid ANSWER section without REFUSED, suggesting open recursion.",
+          "strength": 3,
+          "data": {}
+        }
+      ],
+      "tags": ["dns", "amplification-risk"],
+      "status": "open"
+    },
+    {
+      "id": "f010",
+      "title": "Directory Listing Enabled",
       "severity": "low",
-      "status": "open",
-      "tags": [],
-      "title": "Exposed SSH Service",
-      "type": "Needs Owner Validation"
-    },
-    {
-      "asset": "192.0.2.10",
-      "confidence": "Informational",
-      "created_at": "2026-05-16T19:54:28.295254+00:00",
-      "cve_id": null,
-      "cvss": null,
-      "description": "A potentially sensitive service is reachable and should be validated against approved exposure policy.",
-      "epss": null,
-      "evidence": [
-        {
-          "data": {
-            "confidence": 10,
-            "cpe": [],
-            "host": "192.0.2.10",
-            "port": 2121,
-            "product": "vsftpd",
-            "protocol": "tcp",
-            "routing_reason": "FTP fingerprint matched.",
-            "service": "ftp",
-            "version": "3.0.5"
-          },
-          "description": "Service fingerprint matched exposure keyword 'ftp'.",
-          "id": "990f0088-508c-46e1-8ade-dfd78e83e1f8",
-          "source": "module:exposure",
-          "strength": 2
-        }
-      ],
-      "evidence_strength": 2,
-      "false_positive_risk": "contextual",
-      "id": "53f820bc-089e-4488-8b87-f20c9a379af1",
-      "kev": false,
-      "manual_validation": true,
-      "module": "exposure",
-      "port": 2121,
-      "priority": "P3",
+      "asset": "192.168.10.50",
+      "port": 80,
       "protocol": "tcp",
-      "recommendation": "Confirm business need, restrict network access, and harden configuration.",
-      "references": [],
-      "run_id": null,
-      "service": "ftp",
-      "severity": "medium",
-      "status": "open",
-      "tags": [],
-      "title": "Exposed FTP Service",
-      "type": "Needs Owner Validation"
-    },
-    {
-      "asset": "192.0.2.10",
-      "confidence": "Informational",
-      "created_at": "2026-05-16T19:54:28.295254+00:00",
-      "cve_id": null,
+      "service": "http",
+      "confidence": "Confirmed",
+      "category": "best_practice",
       "cvss": null,
-      "description": "A potentially sensitive service is reachable and should be validated against approved exposure policy.",
-      "epss": null,
+      "description": "The web server at 192.168.10.50 serves directory listings for /backup/ and /uploads/. An attacker can enumerate all hosted files and may discover sensitive data.",
+      "recommendation": "Disable autoindex. Ensure all directories have an index file or return 403 Forbidden.",
+      "module": "http",
+      "priority": "P4",
+      "false_positive_risk": "low",
+      "evidence_strength": 4,
       "evidence": [
         {
-          "data": {
-            "confidence": 10,
-            "cpe": [],
-            "host": "192.0.2.10",
-            "port": 161,
-            "product": "Net-SNMP",
-            "protocol": "udp",
-            "routing_reason": "SNMP fingerprint or UDP 161 fallback matched.",
-            "service": "snmp",
-            "version": "5.9"
-          },
-          "description": "Service fingerprint matched exposure keyword 'snmp'.",
-          "id": "09757085-0cf0-4fad-99ff-f10369a3d9c1",
-          "source": "module:exposure",
-          "strength": 2
+          "source": "http-probe",
+          "description": "GET /backup/ returned HTTP 200 with an HTML directory listing containing 12 files including database_backup_2026-04.sql.gz.",
+          "strength": 4,
+          "data": {}
         }
       ],
-      "evidence_strength": 2,
-      "false_positive_risk": "contextual",
-      "id": "ef6e28c1-c42f-4f7f-854e-4631b6e0c01b",
-      "kev": false,
-      "manual_validation": true,
-      "module": "exposure",
-      "port": 161,
-      "priority": "P3",
-      "protocol": "udp",
-      "recommendation": "Confirm business need, restrict network access, and harden configuration.",
-      "references": [],
-      "run_id": null,
-      "service": "snmp",
-      "severity": "medium",
-      "status": "open",
-      "tags": [],
-      "title": "Exposed SNMP Service",
-      "type": "Needs Owner Validation"
+      "tags": ["information-disclosure"],
+      "status": "open"
     }
   ],
-  "findings_by_module": {},
-  "finished_at": "2026-05-16T19:54:28.295254+00:00",
-  "live_hosts": [
-    "192.0.2.10"
-  ],
+  "assets": [],
   "metadata": {
-    "evidence_by_module": {
-      "database": 0,
-      "devops": 0,
-      "dns": 0,
-      "exposure": 5,
-      "ftp": 0,
-      "http": 0,
-      "kubernetes": 0,
-      "mail": 0,
-      "ntp": 0,
-      "rdp": 0,
-      "smb": 0,
-      "snmp": 0,
-      "ssh": 0,
-      "tls": 0,
-      "vpn": 0,
-      "winrm": 0
-    },
-    "findings_by_module": {
-      "database": 0,
-      "devops": 0,
-      "dns": 0,
-      "exposure": 5,
-      "ftp": 0,
-      "http": 0,
-      "kubernetes": 0,
-      "mail": 0,
-      "ntp": 0,
-      "rdp": 0,
-      "smb": 0,
-      "snmp": 0,
-      "ssh": 0,
-      "tls": 0,
-      "vpn": 0,
-      "winrm": 0
-    },
-    "module_errors": [],
-    "module_runs": [
-      {
-        "duration": 0.0,
-        "errors": [],
-        "evidence": [
-          {
-            "data": {
-              "confidence": 10,
-              "cpe": [
-                "cpe:/a:apache:tomcat:9.0.1"
-              ],
-              "host": "192.0.2.10",
-              "port": 8080,
-              "product": "Apache Tomcat",
-              "protocol": "tcp",
-              "routing_reason": "HTTP/web fingerprint matched.",
-              "service": "http",
-              "version": "9.0.1"
-            },
-            "description": "Service fingerprint matched exposure keyword 'tomcat'.",
-            "id": "0c164ccd-234a-4d89-9436-95b07e50abd5",
-            "source": "module:exposure",
-            "strength": 2
-          }
-        ],
-        "findings": [
-          {
-            "asset": "192.0.2.10",
-            "confidence": "Informational",
-            "created_at": "2026-05-16T19:54:28.294253+00:00",
-            "cve_id": null,
-            "cvss": null,
-            "description": "A potentially sensitive service is reachable and should be validated against approved exposure policy.",
-            "epss": null,
-            "evidence": [
-              {
-                "data": {
-                  "confidence": 10,
-                  "cpe": [
-                    "cpe:/a:apache:tomcat:9.0.1"
-                  ],
-                  "host": "192.0.2.10",
-                  "port": 8080,
-                  "product": "Apache Tomcat",
-                  "protocol": "tcp",
-                  "routing_reason": "HTTP/web fingerprint matched.",
-                  "service": "http",
-                  "version": "9.0.1"
-                },
-                "description": "Service fingerprint matched exposure keyword 'tomcat'.",
-                "id": "0c164ccd-234a-4d89-9436-95b07e50abd5",
-                "source": "module:exposure",
-                "strength": 2
-              }
-            ],
-            "evidence_strength": 2,
-            "false_positive_risk": "contextual",
-            "id": "601731eb-1cd2-4871-b2e5-7c8f583dc67b",
-            "kev": false,
-            "manual_validation": true,
-            "module": "exposure",
-            "port": 8080,
-            "priority": "P3",
-            "protocol": "tcp",
-            "recommendation": "Confirm business need, restrict network access, and harden configuration.",
-            "references": [],
-            "run_id": null,
-            "service": "http",
-            "severity": "medium",
-            "status": "open",
-            "tags": [],
-            "title": "Exposed TOMCAT Service",
-            "type": "Needs Owner Validation"
-          }
-        ],
-        "module_name": "exposure",
-        "skipped_reason": null,
-        "target": {
-          "confidence": 10,
-          "cpe": [
-            "cpe:/a:apache:tomcat:9.0.1"
-          ],
-          "host": "192.0.2.10",
-          "port": 8080,
-          "product": "Apache Tomcat",
-          "protocol": "tcp",
-          "routing_reason": "HTTP/web fingerprint matched.",
-          "service": "http",
-          "version": "9.0.1"
-        }
-      },
-      {
-        "duration": 0.0,
-        "errors": [],
-        "evidence": [],
-        "findings": [],
-        "module_name": "exposure",
-        "skipped_reason": null,
-        "target": {
-          "confidence": 10,
-          "cpe": [],
-          "host": "192.0.2.10",
-          "port": 8443,
-          "product": "nginx",
-          "protocol": "tcp",
-          "routing_reason": "HTTP/web fingerprint matched.",
-          "service": "https",
-          "version": "1.24.0"
-        }
-      },
-      {
-        "duration": 0.0,
-        "errors": [],
-        "evidence": [
-          {
-            "data": {
-              "confidence": 10,
-              "cpe": [],
-              "host": "192.0.2.10",
-              "port": 445,
-              "product": "Samba smbd",
-              "protocol": "tcp",
-              "routing_reason": "SMB fingerprint or fallback port matched.",
-              "service": "microsoft-ds",
-              "version": "4.18"
-            },
-            "description": "Service fingerprint matched exposure keyword 'smb'.",
-            "id": "5b8d8c62-81ae-423a-980b-efe244a293b7",
-            "source": "module:exposure",
-            "strength": 2
-          }
-        ],
-        "findings": [
-          {
-            "asset": "192.0.2.10",
-            "confidence": "Informational",
-            "created_at": "2026-05-16T19:54:28.294253+00:00",
-            "cve_id": null,
-            "cvss": null,
-            "description": "A potentially sensitive service is reachable and should be validated against approved exposure policy.",
-            "epss": null,
-            "evidence": [
-              {
-                "data": {
-                  "confidence": 10,
-                  "cpe": [],
-                  "host": "192.0.2.10",
-                  "port": 445,
-                  "product": "Samba smbd",
-                  "protocol": "tcp",
-                  "routing_reason": "SMB fingerprint or fallback port matched.",
-                  "service": "microsoft-ds",
-                  "version": "4.18"
-                },
-                "description": "Service fingerprint matched exposure keyword 'smb'.",
-                "id": "5b8d8c62-81ae-423a-980b-efe244a293b7",
-                "source": "module:exposure",
-                "strength": 2
-              }
-            ],
-            "evidence_strength": 2,
-            "false_positive_risk": "contextual",
-            "id": "b55a9811-7f19-4e6b-a8ad-2eef04f074a6",
-            "kev": false,
-            "manual_validation": true,
-            "module": "exposure",
-            "port": 445,
-            "priority": "P3",
-            "protocol": "tcp",
-            "recommendation": "Confirm business need, restrict network access, and harden configuration.",
-            "references": [],
-            "run_id": null,
-            "service": "microsoft-ds",
-            "severity": "medium",
-            "status": "open",
-            "tags": [],
-            "title": "Exposed SMB Service",
-            "type": "Needs Owner Validation"
-          }
-        ],
-        "module_name": "exposure",
-        "skipped_reason": null,
-        "target": {
-          "confidence": 10,
-          "cpe": [],
-          "host": "192.0.2.10",
-          "port": 445,
-          "product": "Samba smbd",
-          "protocol": "tcp",
-          "routing_reason": "SMB fingerprint or fallback port matched.",
-          "service": "microsoft-ds",
-          "version": "4.18"
-        }
-      },
-      {
-        "duration": 0.0,
-        "errors": [],
-        "evidence": [
-          {
-            "data": {
-              "confidence": 10,
-              "cpe": [],
-              "host": "192.0.2.10",
-              "port": 2222,
-              "product": "OpenSSH",
-              "protocol": "tcp",
-              "routing_reason": "SSH fingerprint matched.",
-              "service": "ssh",
-              "version": "9.2"
-            },
-            "description": "Service fingerprint matched exposure keyword 'ssh'.",
-            "id": "7deec28a-5236-4cf0-bcc2-feb0cb47bf20",
-            "source": "module:exposure",
-            "strength": 2
-          }
-        ],
-        "findings": [
-          {
-            "asset": "192.0.2.10",
-            "confidence": "Informational",
-            "created_at": "2026-05-16T19:54:28.295254+00:00",
-            "cve_id": null,
-            "cvss": null,
-            "description": "A potentially sensitive service is reachable and should be validated against approved exposure policy.",
-            "epss": null,
-            "evidence": [
-              {
-                "data": {
-                  "confidence": 10,
-                  "cpe": [],
-                  "host": "192.0.2.10",
-                  "port": 2222,
-                  "product": "OpenSSH",
-                  "protocol": "tcp",
-                  "routing_reason": "SSH fingerprint matched.",
-                  "service": "ssh",
-                  "version": "9.2"
-                },
-                "description": "Service fingerprint matched exposure keyword 'ssh'.",
-                "id": "7deec28a-5236-4cf0-bcc2-feb0cb47bf20",
-                "source": "module:exposure",
-                "strength": 2
-              }
-            ],
-            "evidence_strength": 2,
-            "false_positive_risk": "contextual",
-            "id": "1ff3c859-b2d1-4e6a-a3e8-fa072fb2735e",
-            "kev": false,
-            "manual_validation": true,
-            "module": "exposure",
-            "port": 2222,
-            "priority": "P4",
-            "protocol": "tcp",
-            "recommendation": "Confirm business need, restrict network access, and harden configuration.",
-            "references": [],
-            "run_id": null,
-            "service": "ssh",
-            "severity": "low",
-            "status": "open",
-            "tags": [],
-            "title": "Exposed SSH Service",
-            "type": "Needs Owner Validation"
-          }
-        ],
-        "module_name": "exposure",
-        "skipped_reason": null,
-        "target": {
-          "confidence": 10,
-          "cpe": [],
-          "host": "192.0.2.10",
-          "port": 2222,
-          "product": "OpenSSH",
-          "protocol": "tcp",
-          "routing_reason": "SSH fingerprint matched.",
-          "service": "ssh",
-          "version": "9.2"
-        }
-      },
-      {
-        "duration": 0.0,
-        "errors": [],
-        "evidence": [
-          {
-            "data": {
-              "confidence": 10,
-              "cpe": [],
-              "host": "192.0.2.10",
-              "port": 2121,
-              "product": "vsftpd",
-              "protocol": "tcp",
-              "routing_reason": "FTP fingerprint matched.",
-              "service": "ftp",
-              "version": "3.0.5"
-            },
-            "description": "Service fingerprint matched exposure keyword 'ftp'.",
-            "id": "990f0088-508c-46e1-8ade-dfd78e83e1f8",
-            "source": "module:exposure",
-            "strength": 2
-          }
-        ],
-        "findings": [
-          {
-            "asset": "192.0.2.10",
-            "confidence": "Informational",
-            "created_at": "2026-05-16T19:54:28.295254+00:00",
-            "cve_id": null,
-            "cvss": null,
-            "description": "A potentially sensitive service is reachable and should be validated against approved exposure policy.",
-            "epss": null,
-            "evidence": [
-              {
-                "data": {
-                  "confidence": 10,
-                  "cpe": [],
-                  "host": "192.0.2.10",
-                  "port": 2121,
-                  "product": "vsftpd",
-                  "protocol": "tcp",
-                  "routing_reason": "FTP fingerprint matched.",
-                  "service": "ftp",
-                  "version": "3.0.5"
-                },
-                "description": "Service fingerprint matched exposure keyword 'ftp'.",
-                "id": "990f0088-508c-46e1-8ade-dfd78e83e1f8",
-                "source": "module:exposure",
-                "strength": 2
-              }
-            ],
-            "evidence_strength": 2,
-            "false_positive_risk": "contextual",
-            "id": "53f820bc-089e-4488-8b87-f20c9a379af1",
-            "kev": false,
-            "manual_validation": true,
-            "module": "exposure",
-            "port": 2121,
-            "priority": "P3",
-            "protocol": "tcp",
-            "recommendation": "Confirm business need, restrict network access, and harden configuration.",
-            "references": [],
-            "run_id": null,
-            "service": "ftp",
-            "severity": "medium",
-            "status": "open",
-            "tags": [],
-            "title": "Exposed FTP Service",
-            "type": "Needs Owner Validation"
-          }
-        ],
-        "module_name": "exposure",
-        "skipped_reason": null,
-        "target": {
-          "confidence": 10,
-          "cpe": [],
-          "host": "192.0.2.10",
-          "port": 2121,
-          "product": "vsftpd",
-          "protocol": "tcp",
-          "routing_reason": "FTP fingerprint matched.",
-          "service": "ftp",
-          "version": "3.0.5"
-        }
-      },
-      {
-        "duration": 0.0,
-        "errors": [],
-        "evidence": [
-          {
-            "data": {
-              "confidence": 10,
-              "cpe": [],
-              "host": "192.0.2.10",
-              "port": 161,
-              "product": "Net-SNMP",
-              "protocol": "udp",
-              "routing_reason": "SNMP fingerprint or UDP 161 fallback matched.",
-              "service": "snmp",
-              "version": "5.9"
-            },
-            "description": "Service fingerprint matched exposure keyword 'snmp'.",
-            "id": "09757085-0cf0-4fad-99ff-f10369a3d9c1",
-            "source": "module:exposure",
-            "strength": 2
-          }
-        ],
-        "findings": [
-          {
-            "asset": "192.0.2.10",
-            "confidence": "Informational",
-            "created_at": "2026-05-16T19:54:28.295254+00:00",
-            "cve_id": null,
-            "cvss": null,
-            "description": "A potentially sensitive service is reachable and should be validated against approved exposure policy.",
-            "epss": null,
-            "evidence": [
-              {
-                "data": {
-                  "confidence": 10,
-                  "cpe": [],
-                  "host": "192.0.2.10",
-                  "port": 161,
-                  "product": "Net-SNMP",
-                  "protocol": "udp",
-                  "routing_reason": "SNMP fingerprint or UDP 161 fallback matched.",
-                  "service": "snmp",
-                  "version": "5.9"
-                },
-                "description": "Service fingerprint matched exposure keyword 'snmp'.",
-                "id": "09757085-0cf0-4fad-99ff-f10369a3d9c1",
-                "source": "module:exposure",
-                "strength": 2
-              }
-            ],
-            "evidence_strength": 2,
-            "false_positive_risk": "contextual",
-            "id": "ef6e28c1-c42f-4f7f-854e-4631b6e0c01b",
-            "kev": false,
-            "manual_validation": true,
-            "module": "exposure",
-            "port": 161,
-            "priority": "P3",
-            "protocol": "udp",
-            "recommendation": "Confirm business need, restrict network access, and harden configuration.",
-            "references": [],
-            "run_id": null,
-            "service": "snmp",
-            "severity": "medium",
-            "status": "open",
-            "tags": [],
-            "title": "Exposed SNMP Service",
-            "type": "Needs Owner Validation"
-          }
-        ],
-        "module_name": "exposure",
-        "skipped_reason": null,
-        "target": {
-          "confidence": 10,
-          "cpe": [],
-          "host": "192.0.2.10",
-          "port": 161,
-          "product": "Net-SNMP",
-          "protocol": "udp",
-          "routing_reason": "SNMP fingerprint or UDP 161 fallback matched.",
-          "service": "snmp",
-          "version": "5.9"
-        }
-      },
-      {
-        "duration": 0.0,
-        "errors": [],
-        "evidence": [],
-        "findings": [],
-        "module_name": "exposure",
-        "skipped_reason": null,
-        "target": {
-          "confidence": 3,
-          "cpe": [],
-          "host": "192.0.2.10",
-          "port": 500,
-          "product": "",
-          "protocol": "udp",
-          "routing_reason": "No fingerprint route matched.",
-          "service": "isakmp",
-          "version": ""
-        }
-      },
-      {
-        "duration": 0.0,
-        "errors": [],
-        "evidence": [],
-        "findings": [],
-        "module_name": "tls",
-        "skipped_reason": "Disabled by profile/config.",
-        "target": {}
-      },
-      {
-        "duration": 0.0,
-        "errors": [],
-        "evidence": [],
-        "findings": [],
-        "module_name": "http",
-        "skipped_reason": "Disabled by profile/config.",
-        "target": {}
-      },
-      {
-        "duration": 0.0,
-        "errors": [],
-        "evidence": [],
-        "findings": [],
-        "module_name": "smb",
-        "skipped_reason": "Disabled by profile/config.",
-        "target": {}
-      },
-      {
-        "duration": 0.0,
-        "errors": [],
-        "evidence": [],
-        "findings": [],
-        "module_name": "ssh",
-        "skipped_reason": "Disabled by profile/config.",
-        "target": {}
-      },
-      {
-        "duration": 0.0,
-        "errors": [],
-        "evidence": [],
-        "findings": [],
-        "module_name": "rdp",
-        "skipped_reason": "Disabled by profile/config.",
-        "target": {}
-      },
-      {
-        "duration": 0.0,
-        "errors": [],
-        "evidence": [],
-        "findings": [],
-        "module_name": "winrm",
-        "skipped_reason": "Disabled by profile/config.",
-        "target": {}
-      },
-      {
-        "duration": 0.0,
-        "errors": [],
-        "evidence": [],
-        "findings": [],
-        "module_name": "ftp",
-        "skipped_reason": "Disabled by profile/config.",
-        "target": {}
-      },
-      {
-        "duration": 0.0,
-        "errors": [],
-        "evidence": [],
-        "findings": [],
-        "module_name": "snmp",
-        "skipped_reason": "Disabled by profile/config.",
-        "target": {}
-      },
-      {
-        "duration": 0.0,
-        "errors": [],
-        "evidence": [],
-        "findings": [],
-        "module_name": "dns",
-        "skipped_reason": "Disabled by profile/config.",
-        "target": {}
-      },
-      {
-        "duration": 0.0,
-        "errors": [],
-        "evidence": [],
-        "findings": [],
-        "module_name": "ntp",
-        "skipped_reason": "Disabled by profile/config.",
-        "target": {}
-      },
-      {
-        "duration": 0.0,
-        "errors": [],
-        "evidence": [],
-        "findings": [],
-        "module_name": "database",
-        "skipped_reason": "Disabled by profile/config.",
-        "target": {}
-      },
-      {
-        "duration": 0.0,
-        "errors": [],
-        "evidence": [],
-        "findings": [],
-        "module_name": "devops",
-        "skipped_reason": "Disabled by profile/config.",
-        "target": {}
-      },
-      {
-        "duration": 0.0,
-        "errors": [],
-        "evidence": [],
-        "findings": [],
-        "module_name": "kubernetes",
-        "skipped_reason": "Disabled by profile/config.",
-        "target": {}
-      },
-      {
-        "duration": 0.0,
-        "errors": [],
-        "evidence": [],
-        "findings": [],
-        "module_name": "mail",
-        "skipped_reason": "Disabled by profile/config.",
-        "target": {}
-      },
-      {
-        "duration": 0.0,
-        "errors": [],
-        "evidence": [],
-        "findings": [],
-        "module_name": "vpn",
-        "skipped_reason": "Disabled by profile/config.",
-        "target": {}
-      }
-    ],
-    "module_target_counts": {
-      "database_targets": 0,
-      "devops_targets": 1,
-      "dns_targets": 0,
-      "ftp_targets": 1,
-      "http_targets": 2,
-      "kubernetes_targets": 0,
-      "mail_targets": 0,
-      "ntp_targets": 0,
-      "rdp_targets": 0,
-      "smb_targets": 1,
-      "snmp_targets": 1,
-      "ssh_targets": 1,
-      "tls_targets": 1,
-      "unknown_services": 1,
-      "vpn_appliance_targets": 0,
-      "winrm_targets": 0
-    },
-    "module_targets": {
-      "database_targets": [],
-      "devops_targets": [
-        {
-          "confidence": 10,
-          "cpe": [
-            "cpe:/a:apache:tomcat:9.0.1"
-          ],
-          "host": "192.0.2.10",
-          "port": 8080,
-          "product": "Apache Tomcat",
-          "protocol": "tcp",
-          "routing_reason": "DevOps/admin fingerprint matched.",
-          "service": "http",
-          "version": "9.0.1"
-        }
-      ],
-      "dns_targets": [],
-      "ftp_targets": [
-        {
-          "confidence": 10,
-          "cpe": [],
-          "host": "192.0.2.10",
-          "port": 2121,
-          "product": "vsftpd",
-          "protocol": "tcp",
-          "routing_reason": "FTP fingerprint matched.",
-          "service": "ftp",
-          "version": "3.0.5"
-        }
-      ],
-      "http_targets": [
-        {
-          "confidence": 10,
-          "cpe": [
-            "cpe:/a:apache:tomcat:9.0.1"
-          ],
-          "host": "192.0.2.10",
-          "port": 8080,
-          "product": "Apache Tomcat",
-          "protocol": "tcp",
-          "routing_reason": "HTTP/web fingerprint matched.",
-          "service": "http",
-          "version": "9.0.1"
-        },
-        {
-          "confidence": 10,
-          "cpe": [],
-          "host": "192.0.2.10",
-          "port": 8443,
-          "product": "nginx",
-          "protocol": "tcp",
-          "routing_reason": "HTTP/web fingerprint matched.",
-          "service": "https",
-          "version": "1.24.0"
-        }
-      ],
-      "kubernetes_targets": [],
-      "mail_targets": [],
-      "ntp_targets": [],
-      "rdp_targets": [],
-      "smb_targets": [
-        {
-          "confidence": 10,
-          "cpe": [],
-          "host": "192.0.2.10",
-          "port": 445,
-          "product": "Samba smbd",
-          "protocol": "tcp",
-          "routing_reason": "SMB fingerprint or fallback port matched.",
-          "service": "microsoft-ds",
-          "version": "4.18"
-        }
-      ],
-      "snmp_targets": [
-        {
-          "confidence": 10,
-          "cpe": [],
-          "host": "192.0.2.10",
-          "port": 161,
-          "product": "Net-SNMP",
-          "protocol": "udp",
-          "routing_reason": "SNMP fingerprint or UDP 161 fallback matched.",
-          "service": "snmp",
-          "version": "5.9"
-        }
-      ],
-      "ssh_targets": [
-        {
-          "confidence": 10,
-          "cpe": [],
-          "host": "192.0.2.10",
-          "port": 2222,
-          "product": "OpenSSH",
-          "protocol": "tcp",
-          "routing_reason": "SSH fingerprint matched.",
-          "service": "ssh",
-          "version": "9.2"
-        }
-      ],
-      "tls_targets": [
-        {
-          "confidence": 10,
-          "cpe": [],
-          "host": "192.0.2.10",
-          "port": 8443,
-          "product": "nginx",
-          "protocol": "tcp",
-          "routing_reason": "TLS tunnel/fingerprint/handshake matched.",
-          "service": "https",
-          "version": "1.24.0"
-        }
-      ],
-      "unknown_services": [
-        {
-          "confidence": 3,
-          "cpe": [],
-          "host": "192.0.2.10",
-          "port": 500,
-          "product": "",
-          "protocol": "udp",
-          "routing_reason": "No fingerprint route matched.",
-          "service": "isakmp",
-          "version": ""
-        }
-      ],
-      "vpn_appliance_targets": [],
-      "winrm_targets": []
-    },
     "state": {
-      "commands_executed": [],
-      "dead_hosts": [
-        "192.0.2.20"
-      ],
-      "evidence_by_module": {},
-      "failed_phases": [],
-      "findings_by_module": {},
-      "generated_files": [
-        "evidence\\targets\\http_targets.json",
-        "evidence\\targets\\tls_targets.json",
-        "evidence\\targets\\smb_targets.json",
-        "evidence\\targets\\database_targets.json",
-        "evidence\\targets\\exposure_targets.json",
-        "evidence\\targets\\all_services.json"
-      ],
-      "live_hosts": [
-        "192.0.2.10"
-      ],
-      "module_errors": [],
-      "module_runs": [],
-      "module_targets": {
-        "database_targets": [],
-        "devops_targets": [
-          {
-            "confidence": 10,
-            "cpe": [
-              "cpe:/a:apache:tomcat:9.0.1"
-            ],
-            "host": "192.0.2.10",
-            "port": 8080,
-            "product": "Apache Tomcat",
-            "protocol": "tcp",
-            "routing_reason": "DevOps/admin fingerprint matched.",
-            "service": "http",
-            "version": "9.0.1"
-          }
-        ],
-        "dns_targets": [],
-        "ftp_targets": [
-          {
-            "confidence": 10,
-            "cpe": [],
-            "host": "192.0.2.10",
-            "port": 2121,
-            "product": "vsftpd",
-            "protocol": "tcp",
-            "routing_reason": "FTP fingerprint matched.",
-            "service": "ftp",
-            "version": "3.0.5"
-          }
-        ],
-        "http_targets": [
-          {
-            "confidence": 10,
-            "cpe": [
-              "cpe:/a:apache:tomcat:9.0.1"
-            ],
-            "host": "192.0.2.10",
-            "port": 8080,
-            "product": "Apache Tomcat",
-            "protocol": "tcp",
-            "routing_reason": "HTTP/web fingerprint matched.",
-            "service": "http",
-            "version": "9.0.1"
-          },
-          {
-            "confidence": 10,
-            "cpe": [],
-            "host": "192.0.2.10",
-            "port": 8443,
-            "product": "nginx",
-            "protocol": "tcp",
-            "routing_reason": "HTTP/web fingerprint matched.",
-            "service": "https",
-            "version": "1.24.0"
-          }
-        ],
-        "kubernetes_targets": [],
-        "mail_targets": [],
-        "ntp_targets": [],
-        "rdp_targets": [],
-        "smb_targets": [
-          {
-            "confidence": 10,
-            "cpe": [],
-            "host": "192.0.2.10",
-            "port": 445,
-            "product": "Samba smbd",
-            "protocol": "tcp",
-            "routing_reason": "SMB fingerprint or fallback port matched.",
-            "service": "microsoft-ds",
-            "version": "4.18"
-          }
-        ],
-        "snmp_targets": [
-          {
-            "confidence": 10,
-            "cpe": [],
-            "host": "192.0.2.10",
-            "port": 161,
-            "product": "Net-SNMP",
-            "protocol": "udp",
-            "routing_reason": "SNMP fingerprint or UDP 161 fallback matched.",
-            "service": "snmp",
-            "version": "5.9"
-          }
-        ],
-        "ssh_targets": [
-          {
-            "confidence": 10,
-            "cpe": [],
-            "host": "192.0.2.10",
-            "port": 2222,
-            "product": "OpenSSH",
-            "protocol": "tcp",
-            "routing_reason": "SSH fingerprint matched.",
-            "service": "ssh",
-            "version": "9.2"
-          }
-        ],
-        "tls_targets": [
-          {
-            "confidence": 10,
-            "cpe": [],
-            "host": "192.0.2.10",
-            "port": 8443,
-            "product": "nginx",
-            "protocol": "tcp",
-            "routing_reason": "TLS tunnel/fingerprint/handshake matched.",
-            "service": "https",
-            "version": "1.24.0"
-          }
-        ],
-        "unknown_services": [
-          {
-            "confidence": 3,
-            "cpe": [],
-            "host": "192.0.2.10",
-            "port": 500,
-            "product": "",
-            "protocol": "udp",
-            "routing_reason": "No fingerprint route matched.",
-            "service": "isakmp",
-            "version": ""
-          }
-        ],
-        "vpn_appliance_targets": [],
-        "winrm_targets": []
-      },
-      "profile": "offline-analysis",
-      "project": "PortWise Assessment",
+      "targets_loaded": ["192.168.10.50", "192.168.10.55", "192.168.10.60"],
+      "live_hosts": ["192.168.10.50", "192.168.10.55", "192.168.10.60"],
+      "dead_hosts": [],
       "services_by_host": {
-        "192.0.2.10": [
-          {
-            "confidence": 10,
-            "cpes": [
-              "cpe:/a:apache:tomcat:9.0.1"
-            ],
-            "extrainfo": "",
-            "host": "192.0.2.10",
-            "hostname": "app.example.test",
-            "method": "probed",
-            "port": 8080,
-            "product": "Apache Tomcat",
-            "protocol": "tcp",
-            "reason": "syn-ack",
-            "scripts": {
-              "http-title": "Tomcat Manager"
-            },
-            "service_name": "http",
-            "source_file": "examples\\sample_nmap.xml",
-            "state": "open",
-            "tunnel": null,
-            "version": "9.0.1"
-          },
-          {
-            "confidence": 10,
-            "cpes": [],
-            "extrainfo": "",
-            "host": "192.0.2.10",
-            "hostname": "app.example.test",
-            "method": "probed",
-            "port": 8443,
-            "product": "nginx",
-            "protocol": "tcp",
-            "reason": "syn-ack",
-            "scripts": {},
-            "service_name": "https",
-            "source_file": "examples\\sample_nmap.xml",
-            "state": "open",
-            "tunnel": "ssl",
-            "version": "1.24.0"
-          },
-          {
-            "confidence": 10,
-            "cpes": [],
-            "extrainfo": "protocol 2.0",
-            "host": "192.0.2.10",
-            "hostname": "app.example.test",
-            "method": "probed",
-            "port": 2222,
-            "product": "OpenSSH",
-            "protocol": "tcp",
-            "reason": "syn-ack",
-            "scripts": {},
-            "service_name": "ssh",
-            "source_file": "examples\\sample_nmap.xml",
-            "state": "open",
-            "tunnel": null,
-            "version": "9.2"
-          },
-          {
-            "confidence": 10,
-            "cpes": [],
-            "extrainfo": "",
-            "host": "192.0.2.10",
-            "hostname": "app.example.test",
-            "method": "probed",
-            "port": 2121,
-            "product": "vsftpd",
-            "protocol": "tcp",
-            "reason": "syn-ack",
-            "scripts": {},
-            "service_name": "ftp",
-            "source_file": "examples\\sample_nmap.xml",
-            "state": "open",
-            "tunnel": null,
-            "version": "3.0.5"
-          },
-          {
-            "confidence": 10,
-            "cpes": [],
-            "extrainfo": "",
-            "host": "192.0.2.10",
-            "hostname": "app.example.test",
-            "method": "probed",
-            "port": 445,
-            "product": "Samba smbd",
-            "protocol": "tcp",
-            "reason": "syn-ack",
-            "scripts": {},
-            "service_name": "microsoft-ds",
-            "source_file": "examples\\sample_nmap.xml",
-            "state": "open",
-            "tunnel": null,
-            "version": "4.18"
-          },
-          {
-            "confidence": 10,
-            "cpes": [],
-            "extrainfo": "",
-            "host": "192.0.2.10",
-            "hostname": "app.example.test",
-            "method": "probed",
-            "port": 161,
-            "product": "Net-SNMP",
-            "protocol": "udp",
-            "reason": "udp-response",
-            "scripts": {},
-            "service_name": "snmp",
-            "source_file": "examples\\sample_nmap.xml",
-            "state": "open",
-            "tunnel": null,
-            "version": "5.9"
-          },
-          {
-            "confidence": 3,
-            "cpes": [],
-            "extrainfo": "",
-            "host": "192.0.2.10",
-            "hostname": "app.example.test",
-            "method": "table",
-            "port": 500,
-            "product": "",
-            "protocol": "udp",
-            "reason": "no-response",
-            "scripts": {},
-            "service_name": "isakmp",
-            "source_file": "examples\\sample_nmap.xml",
-            "state": "open|filtered",
-            "tunnel": null,
-            "version": ""
-          }
+        "192.168.10.50": [
+          {"port": 80, "protocol": "tcp", "service_name": "http", "product": "nginx", "version": "1.18.0"},
+          {"port": 443, "protocol": "tcp", "service_name": "https", "product": "nginx", "version": "1.18.0"}
         ],
-        "192.0.2.20": []
+        "192.168.10.55": [
+          {"port": 22, "protocol": "tcp", "service_name": "ssh", "product": "OpenSSH", "version": "7.6p1"},
+          {"port": 6379, "protocol": "tcp", "service_name": "redis", "product": "Redis key-value store", "version": "6.0.9"}
+        ],
+        "192.168.10.60": [
+          {"port": 445, "protocol": "tcp", "service_name": "microsoft-ds", "product": "Samba", "version": "4.x"},
+          {"port": 3389, "protocol": "tcp", "service_name": "ms-wbt-server", "product": "Microsoft Terminal Services", "version": ""}
+        ]
+      },
+      "tcp_open_ports_by_host": {
+        "192.168.10.50": [80, 443],
+        "192.168.10.55": [22, 6379],
+        "192.168.10.60": [445, 3389]
       },
       "skipped_phases": [],
-      "targets_loaded": [
-        "192.0.2.10",
-        "192.0.2.20"
-      ],
-      "tcp_open_ports_by_host": {
-        "192.0.2.10": [
-          445,
-          2121,
-          2222,
-          8080,
-          8443
-        ]
-      },
-      "tcp_service_detection_groups": [],
-      "udp_open_filtered_ports_by_host": {
-        "192.0.2.10": [
-          500
-        ]
-      },
-      "udp_open_ports_by_host": {
-        "192.0.2.10": [
-          161
-        ]
-      },
-      "udp_service_detection_groups": [],
-      "updated_at": "2026-05-16T19:54:28.295763+00:00"
+      "failed_phases": []
     }
   },
-  "module_errors": [],
-  "module_runs": [],
-  "module_target_counts": {
-    "database_targets": 0,
-    "devops_targets": 1,
-    "dns_targets": 0,
-    "ftp_targets": 1,
-    "http_targets": 2,
-    "kubernetes_targets": 0,
-    "mail_targets": 0,
-    "ntp_targets": 0,
-    "rdp_targets": 0,
-    "smb_targets": 1,
-    "snmp_targets": 1,
-    "ssh_targets": 1,
-    "tls_targets": 1,
-    "unknown_services": 1,
-    "vpn_appliance_targets": 0,
-    "winrm_targets": 0
-  },
-  "module_target_details": {
-    "database_targets": [],
-    "devops_targets": [
-      {
-        "confidence": 10,
-        "cpe": [
-          "cpe:/a:apache:tomcat:9.0.1"
-        ],
-        "host": "192.0.2.10",
-        "port": 8080,
-        "product": "Apache Tomcat",
-        "protocol": "tcp",
-        "routing_reason": "DevOps/admin fingerprint matched.",
-        "service": "http",
-        "version": "9.0.1"
-      }
-    ],
-    "dns_targets": [],
-    "ftp_targets": [
-      {
-        "confidence": 10,
-        "cpe": [],
-        "host": "192.0.2.10",
-        "port": 2121,
-        "product": "vsftpd",
-        "protocol": "tcp",
-        "routing_reason": "FTP fingerprint matched.",
-        "service": "ftp",
-        "version": "3.0.5"
-      }
-    ],
-    "http_targets": [
-      {
-        "confidence": 10,
-        "cpe": [
-          "cpe:/a:apache:tomcat:9.0.1"
-        ],
-        "host": "192.0.2.10",
-        "port": 8080,
-        "product": "Apache Tomcat",
-        "protocol": "tcp",
-        "routing_reason": "HTTP/web fingerprint matched.",
-        "service": "http",
-        "version": "9.0.1"
-      },
-      {
-        "confidence": 10,
-        "cpe": [],
-        "host": "192.0.2.10",
-        "port": 8443,
-        "product": "nginx",
-        "protocol": "tcp",
-        "routing_reason": "HTTP/web fingerprint matched.",
-        "service": "https",
-        "version": "1.24.0"
-      }
-    ],
-    "kubernetes_targets": [],
-    "mail_targets": [],
-    "ntp_targets": [],
-    "rdp_targets": [],
-    "smb_targets": [
-      {
-        "confidence": 10,
-        "cpe": [],
-        "host": "192.0.2.10",
-        "port": 445,
-        "product": "Samba smbd",
-        "protocol": "tcp",
-        "routing_reason": "SMB fingerprint or fallback port matched.",
-        "service": "microsoft-ds",
-        "version": "4.18"
-      }
-    ],
-    "snmp_targets": [
-      {
-        "confidence": 10,
-        "cpe": [],
-        "host": "192.0.2.10",
-        "port": 161,
-        "product": "Net-SNMP",
-        "protocol": "udp",
-        "routing_reason": "SNMP fingerprint or UDP 161 fallback matched.",
-        "service": "snmp",
-        "version": "5.9"
-      }
-    ],
-    "ssh_targets": [
-      {
-        "confidence": 10,
-        "cpe": [],
-        "host": "192.0.2.10",
-        "port": 2222,
-        "product": "OpenSSH",
-        "protocol": "tcp",
-        "routing_reason": "SSH fingerprint matched.",
-        "service": "ssh",
-        "version": "9.2"
-      }
-    ],
-    "tls_targets": [
-      {
-        "confidence": 10,
-        "cpe": [],
-        "host": "192.0.2.10",
-        "port": 8443,
-        "product": "nginx",
-        "protocol": "tcp",
-        "routing_reason": "TLS tunnel/fingerprint/handshake matched.",
-        "service": "https",
-        "version": "1.24.0"
-      }
-    ],
-    "unknown_services": [
-      {
-        "confidence": 3,
-        "cpe": [],
-        "host": "192.0.2.10",
-        "port": 500,
-        "product": "",
-        "protocol": "udp",
-        "routing_reason": "No fingerprint route matched.",
-        "service": "isakmp",
-        "version": ""
-      }
-    ],
-    "vpn_appliance_targets": [],
-    "winrm_targets": []
-  },
-  "profile": "offline-analysis",
-  "project": "PortWise Assessment",
-  "project_info": {
-    "finished_at": "2026-05-16T19:54:28.295254+00:00",
-    "profile": "offline-analysis",
-    "project": "PortWise Assessment",
-    "started_at": "2026-05-16T19:54:28.294253+00:00"
-  },
-  "services": {
-    "192.0.2.10": [
-      {
-        "confidence": 10,
-        "cpes": [
-          "cpe:/a:apache:tomcat:9.0.1"
-        ],
-        "extrainfo": "",
-        "host": "192.0.2.10",
-        "hostname": "app.example.test",
-        "method": "probed",
-        "port": 8080,
-        "product": "Apache Tomcat",
-        "protocol": "tcp",
-        "reason": "syn-ack",
-        "scripts": {
-          "http-title": "Tomcat Manager"
-        },
-        "service_name": "http",
-        "source_file": "examples\\sample_nmap.xml",
-        "state": "open",
-        "tunnel": null,
-        "version": "9.0.1"
-      },
-      {
-        "confidence": 10,
-        "cpes": [],
-        "extrainfo": "",
-        "host": "192.0.2.10",
-        "hostname": "app.example.test",
-        "method": "probed",
-        "port": 8443,
-        "product": "nginx",
-        "protocol": "tcp",
-        "reason": "syn-ack",
-        "scripts": {},
-        "service_name": "https",
-        "source_file": "examples\\sample_nmap.xml",
-        "state": "open",
-        "tunnel": "ssl",
-        "version": "1.24.0"
-      },
-      {
-        "confidence": 10,
-        "cpes": [],
-        "extrainfo": "protocol 2.0",
-        "host": "192.0.2.10",
-        "hostname": "app.example.test",
-        "method": "probed",
-        "port": 2222,
-        "product": "OpenSSH",
-        "protocol": "tcp",
-        "reason": "syn-ack",
-        "scripts": {},
-        "service_name": "ssh",
-        "source_file": "examples\\sample_nmap.xml",
-        "state": "open",
-        "tunnel": null,
-        "version": "9.2"
-      },
-      {
-        "confidence": 10,
-        "cpes": [],
-        "extrainfo": "",
-        "host": "192.0.2.10",
-        "hostname": "app.example.test",
-        "method": "probed",
-        "port": 2121,
-        "product": "vsftpd",
-        "protocol": "tcp",
-        "reason": "syn-ack",
-        "scripts": {},
-        "service_name": "ftp",
-        "source_file": "examples\\sample_nmap.xml",
-        "state": "open",
-        "tunnel": null,
-        "version": "3.0.5"
-      },
-      {
-        "confidence": 10,
-        "cpes": [],
-        "extrainfo": "",
-        "host": "192.0.2.10",
-        "hostname": "app.example.test",
-        "method": "probed",
-        "port": 445,
-        "product": "Samba smbd",
-        "protocol": "tcp",
-        "reason": "syn-ack",
-        "scripts": {},
-        "service_name": "microsoft-ds",
-        "source_file": "examples\\sample_nmap.xml",
-        "state": "open",
-        "tunnel": null,
-        "version": "4.18"
-      },
-      {
-        "confidence": 10,
-        "cpes": [],
-        "extrainfo": "",
-        "host": "192.0.2.10",
-        "hostname": "app.example.test",
-        "method": "probed",
-        "port": 161,
-        "product": "Net-SNMP",
-        "protocol": "udp",
-        "reason": "udp-response",
-        "scripts": {},
-        "service_name": "snmp",
-        "source_file": "examples\\sample_nmap.xml",
-        "state": "open",
-        "tunnel": null,
-        "version": "5.9"
-      },
-      {
-        "confidence": 3,
-        "cpes": [],
-        "extrainfo": "",
-        "host": "192.0.2.10",
-        "hostname": "app.example.test",
-        "method": "table",
-        "port": 500,
-        "product": "",
-        "protocol": "udp",
-        "reason": "no-response",
-        "scripts": {},
-        "service_name": "isakmp",
-        "source_file": "examples\\sample_nmap.xml",
-        "state": "open|filtered",
-        "tunnel": null,
-        "version": ""
-      }
-    ],
-    "192.0.2.20": []
-  },
+  "commands": [
+    {"name": "TCP SYN scan", "command": ["nmap", "-sS", "-p", "1-65535", "-T4", "192.168.10.0/24"]},
+    {"name": "Service detection", "command": ["nmap", "-sV", "-sC", "-p", "80,443,22,6379,445,3389", "192.168.10.50", "192.168.10.55", "192.168.10.60"]}
+  ],
   "skipped_checks": [],
-  "skipped_phases": [],
-  "started_at": "2026-05-16T19:54:28.294253+00:00",
-  "summary": {
-    "by_confidence": {
-      "Informational": 5,
-      "Needs Manual Validation": 5
-    },
-    "by_severity": {
-      "low": 2,
-      "medium": 8
-    },
-    "by_status": {
-      "open": 10
-    },
-    "by_type": {
-      "Needs Owner Validation": 5,
-      "exposure": 5
-    }
-  },
-  "tcp_open_ports_summary": {
-    "192.0.2.10": [
-      445,
-      2121,
-      2222,
-      8080,
-      8443
-    ]
-  },
-  "tcp_service_detection_groups": [],
-  "udp_open_filtered_summary": {
-    "192.0.2.10": [
-      500
-    ]
-  },
-  "udp_open_ports_summary": {
-    "192.0.2.10": [
-      161
-    ]
-  },
-  "udp_service_detection_groups": []
+  "failed_checks": []
 }

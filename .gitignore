@@ -36,3 +36,6 @@ cache/
 # Keep publishable documentation-safe XML examples
 !examples/*.xml
 !.gitkeep
+
+config.yaml
+*.local.yaml

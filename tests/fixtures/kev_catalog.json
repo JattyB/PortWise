@@ -1,0 +1,20 @@
+{
+  "title": "CISA Known Exploited Vulnerabilities Catalog",
+  "catalogVersion": "2024.01.01",
+  "dateReleased": "2024-01-01T00:00:00.0000Z",
+  "count": 1,
+  "vulnerabilities": [
+    {
+      "cveID": "CVE-2024-00001",
+      "vendorProject": "nginx",
+      "product": "nginx",
+      "vulnerabilityName": "nginx Remote DoS",
+      "dateAdded": "2024-01-01",
+      "shortDescription": "Test known exploited vulnerability in nginx.",
+      "requiredAction": "Apply updates per vendor guidance.",
+      "dueDate": "2024-01-15",
+      "knownRansomwareCampaignUse": "Unknown",
+      "notes": "https://nginx.org/en/security_advisories.html"
+    }
+  ]
+}

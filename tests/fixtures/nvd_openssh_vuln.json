@@ -1,0 +1,62 @@
+{
+  "resultsPerPage": 1,
+  "startIndex": 0,
+  "totalResults": 1,
+  "format": "NVD_CVE",
+  "version": "2.0",
+  "timestamp": "2024-01-01T00:00:00.000",
+  "vulnerabilities": [
+    {
+      "cve": {
+        "id": "CVE-2024-00002",
+        "sourceIdentifier": "cve@mitre.org",
+        "published": "2024-01-01T00:00:00.000",
+        "lastModified": "2024-01-02T00:00:00.000",
+        "vulnStatus": "Analyzed",
+        "descriptions": [
+          {"lang": "en", "value": "Test vulnerability in OpenSSH 8.0 through 8.9."}
+        ],
+        "metrics": {
+          "cvssMetricV31": [
+            {
+              "source": "nvd@nist.gov",
+              "type": "Primary",
+              "cvssData": {
+                "version": "3.1",
+                "vectorString": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:N/A:N",
+                "baseScore": 7.5,
+                "baseSeverity": "HIGH"
+              }
+            }
+          ]
+        },
+        "configurations": [
+          {
+            "nodes": [
+              {
+                "operator": "OR",
+                "negate": false,
+                "cpeMatch": [
+                  {
+                    "vulnerable": true,
+                    "criteria": "cpe:2.3:a:openbsd:openssh:*:*:*:*:*:*:*:*",
+                    "versionStartIncluding": "8.0",
+                    "versionEndIncluding": "8.9",
+                    "matchCriteriaId": "BBBB0002-0000-0000-0000-000000000002"
+                  }
+                ]
+              }
+            ]
+          }
+        ],
+        "references": [
+          {
+            "url": "https://www.openssh.com/security.html",
+            "source": "cve@mitre.org",
+            "tags": ["Vendor Advisory"]
+          }
+        ]
+      }
+    }
+  ]
+}

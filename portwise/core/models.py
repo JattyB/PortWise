@@ -28,6 +28,13 @@ class Confidence(StrEnum):
     FALSE_POSITIVE_CANDIDATE = "False Positive Candidate"
 
 
+class FindingCategory(StrEnum):
+    VULNERABILITY = "vulnerability"
+    BEST_PRACTICE = "best_practice"
+    INFORMATION = "information"
+    HYGIENE = "hygiene"
+
+
 @dataclass(slots=True)
 class Evidence:
     source: str
@@ -38,6 +45,41 @@ class Evidence:
 
     def __post_init__(self) -> None:
         self.strength = max(1, min(5, int(self.strength)))
+
+    @classmethod
+    def with_transcript(
+        cls,
+        source: str,
+        description: str,
+        strength: int,
+        method: str,
+        url: str,
+        request_headers: dict[str, str],
+        response_status: int,
+        response_headers: dict[str, str] | list[tuple[str, str]],
+        response_body: str | bytes,
+        timing_ms: int,
+        observed_at: str | None = None,
+        request_body: str | bytes | None = None,
+        body_cap: int = 2048,
+    ) -> "Evidence":
+        from portwise.utils.sanitize import build_transcript
+        from datetime import datetime, timezone
+        ts = observed_at or datetime.now(timezone.utc).isoformat()
+        transcript = build_transcript(
+            method=method,
+            url=url,
+            request_headers=request_headers,
+            request_body=request_body,
+            response_status=response_status,
+            response_reason="",
+            response_headers=response_headers,
+            response_body=response_body,
+            timing_ms=timing_ms,
+            observed_at=ts,
+            body_cap=body_cap,
+        )
+        return cls(source=source, description=description, strength=strength, data={"transcript": transcript})
 
 
 @dataclass(slots=True)
@@ -60,11 +102,13 @@ class Finding:
     manual_validation: bool = False
     cve_id: str | None = None
     cvss: float | None = None
+    cvss_vector: str | None = None
     epss: float | None = None
     kev: bool = False
     references: list[str] = field(default_factory=list)
     evidence: list[Evidence] = field(default_factory=list)
     tags: list[str] = field(default_factory=list)
+    category: str = FindingCategory.VULNERABILITY
     id: str = field(default_factory=lambda: str(uuid4()))
     created_at: str = field(default_factory=utc_now)
     run_id: str | None = None
@@ -91,7 +135,7 @@ class Service:
     extrainfo: str = ""
     cpes: list[str] = field(default_factory=list)
     reason: str = ""
-    scripts: dict[str, str] = field(default_factory=dict)
+    scripts: dict[str, Any] = field(default_factory=dict)
     confidence: int | None = None
     method: str | None = None
     tunnel: str | None = None
@@ -100,6 +144,18 @@ class Service:
     @property
     def endpoint(self) -> str:
         return f"{self.host}:{self.port}/{self.protocol}"
+
+    def script_text(self, script_id: str) -> str:
+        entry = self.scripts.get(script_id)
+        if isinstance(entry, dict):
+            return entry.get("output", "")
+        return str(entry) if entry is not None else ""
+
+    def script_data(self, script_id: str) -> dict | list | None:
+        entry = self.scripts.get(script_id)
+        if isinstance(entry, dict):
+            return entry.get("data")
+        return None
 
 
 @dataclass(slots=True)
@@ -162,6 +218,7 @@ class ModuleTarget:
     cpe: list[str] = field(default_factory=list)
     confidence: int | None = None
     routing_reason: str = ""
+    scripts: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass(slots=True)

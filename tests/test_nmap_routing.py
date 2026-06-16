@@ -63,7 +63,7 @@ def test_parser_extracts_services_and_udp_states(tmp_path) -> None:
     services = {(svc.protocol, svc.port): svc for svc in assets[0].services}
     assert services[("tcp", 8080)].product == "Apache Tomcat"
     assert services[("tcp", 8080)].cpes == ["cpe:/a:apache:tomcat:9.0.1"]
-    assert services[("tcp", 8080)].scripts["http-title"] == "Tomcat Manager"
+    assert services[("tcp", 8080)].scripts["http-title"]["output"] == "Tomcat Manager"
     assert services[("tcp", 8443)].tunnel == "ssl"
     assert services[("tcp", 2222)].service_name == "ssh"
     assert services[("tcp", 2121)].service_name == "ftp"

@@ -1,0 +1,110 @@
+PORTWISE PT3 — WEB TESTING DEPTH (CONTENT DISCOVERY, CMS, INJECTION INDICATORS)
+===============================================================================
+
+USAGE: Claude Code in C:\Users\ADMIN\Codex\Portwise\PortWise
+  /model claude-sonnet-4-6   (Opus optional for the injection-indicator heuristics)
+  Read the file PT3_web_depth.txt and follow all instructions. TDD. Plan first.
+
+NO LLM/API. Pure Python. SAFE: GET/HEAD only, no payloads that modify state,
+no auth, no real exploitation — INDICATORS ONLY. Route everything through
+PoliteHttpClient (rate-limited, circuit-breaker) so we don't trip WAFs.
+Suite green + ruff clean.
+
+------------------------------------------------------------
+WHY THIS MATTERS
+------------------------------------------------------------
+PortWise's HTTP module does headers/methods/cookies/safe-paths/admin-signatures.
+A real PT web portion needs at minimum: content discovery, CMS fingerprinting,
+and basic injection INDICATORS (not exploitation). This is the biggest "it's a
+PT" gap on the web side. We are NOT building Burp — we're adding safe,
+read-only depth that produces real leads a tester can follow.
+
+------------------------------------------------------------
+WHAT TO BUILD
+------------------------------------------------------------
+
+STEP 1 — Bounded content discovery (GET-only, polite).
+New file: portwise/modules/http/content_discovery.py
+  - A SMALL, curated, built-in wordlist (a few hundred high-signal entries, not
+    a megalist): common backups (.bak, .old, .zip, backup/, db.sql),
+    config files (config.php, web.config, .htaccess, app.config),
+    VCS (.git/, .svn/, .hg/), CI/CD (.gitlab-ci.yml, Jenkinsfile),
+    docs (README, CHANGELOG), admin/ dashboards, /api, /api/v1, /api/docs,
+    /uploads/, /backup/, /test/, /dev/, /.well-known/security.txt, robots.txt,
+    sitemap.xml.
+  - Strict budget: respects PoliteHttpClient per-host budget + circuit breaker.
+    Hard cap (config: web_content_discovery.max_requests, default 150) and a
+    global toggle (default ON only at --validation-level proof or higher; at
+    "safe" level only fetch robots.txt + sitemap.xml + security.txt).
+  - For each hit: only report if status==200 AND body corroborates (non-empty,
+    not the site's catch-all 404-as-200 — detect soft-404 by first fetching a
+    random non-existent path and fingerprinting its response; ignore matches
+    that look like the soft-404).
+  - Findings: "Sensitive File/Path Discovered" with category by content
+    (backup/VCS/config = vulnerability HIGH/MED; docs = information).
+
+STEP 2 — CMS / framework fingerprinting.
+New file: portwise/modules/http/cms_fingerprint.py
+  - Detect WordPress, Joomla, Drupal, Magento, Django, Laravel, Express,
+    Spring, ASP.NET via: response headers (X-Powered-By, X-Generator,
+    Set-Cookie names like wordpress_, laravel_session, csrftoken),
+    meta generator tag, known paths (/wp-login.php, /administrator/,
+    /user/login, /sites/default/), and known static asset paths.
+  - For WordPress specifically (most common): read /readme.html or the meta
+    generator for VERSION; report "WordPress {version} Detected" and feed the
+    version into the CVE enrichment pipeline (reuse cve_enrichment with a
+    synthesized CPE cpe:2.3:a:wordpress:wordpress:{version}).
+  - Findings: "CMS Detected: {name} {version}" (information unless version is
+    known-EOL -> then best_practice/LOW with note).
+
+STEP 3 — Injection INDICATORS (detection only, NO exploitation).
+New file: portwise/modules/http/injection_indicators.py
+  - Parse GET query parameters present on discovered URLs / links found in the
+    homepage body. For each parameter, do SAFE indicator checks ONLY:
+      * Reflected-input indicator: append a unique benign token (e.g.
+        pwxss<random>) to a param value, GET it, check if the token reflects
+        UNENCODED in the response. Report "Potential Reflected Input (XSS
+        candidate)" — POSSIBLE confidence, manual_validation=True. NO script
+        payloads, just a token reflection check.
+      * SQL-error indicator: append a single quote to a param value, GET it,
+        look for database error signatures (SQL syntax, ORA-, mysql_fetch,
+        SQLSTATE, "unclosed quotation mark"). Report "Potential SQL Error
+        Disclosure" — POSSIBLE, manual_validation=True.
+      * Open-redirect indicator: for params named like next/url/redirect/return,
+        set value to a benign external sentinel and check if the Location header
+        echoes it. Report "Potential Open Redirect" — POSSIBLE.
+  - ALL of these are INDICATORS: confidence POSSIBLE, manual_validation=True,
+    category=vulnerability but clearly labeled "requires manual confirmation".
+    NEVER claim confirmed injection. NO destructive payloads, GET-only, single
+    request per param, respect budget + circuit breaker.
+  - Hard gate: only runs at --validation-level proof or controlled, never at safe.
+
+STEP 4 — Wire in.
+  - New target type "web_targets" already overlaps http_targets; reuse the HTTP
+    routing. Add config section web_testing with toggles + budgets + level gate.
+  - Document clearly in README that injection checks are INDICATORS for manual
+    follow-up, GET-only, non-destructive.
+
+------------------------------------------------------------
+TESTS (TDD — canned HTTP responses, NO network)
+------------------------------------------------------------
+  - test_soft_404_detection_suppresses_false_hits
+  - test_backup_file_discovery_reports_high
+  - test_wordpress_version_detected_and_cpe_built
+  - test_reflected_token_indicator_possible_only
+  - test_sql_error_signature_indicator
+  - test_open_redirect_indicator
+  - test_injection_checks_disabled_at_safe_level
+  - test_content_discovery_respects_budget
+
+------------------------------------------------------------
+ACCEPTANCE
+------------------------------------------------------------
+- Content discovery finds real files without soft-404 false positives.
+- CMS + version detection feeds CVE pipeline.
+- Injection INDICATORS produce manual-validation leads, never false "confirmed"
+  claims, GET-only, gated behind validation level.
+- All polite/budgeted; nothing destructive.
+- Suite green; ruff clean. Show before/after on canned web fixtures.
+
+STOP after the plan. Wait for confirmation.

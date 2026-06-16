@@ -1,0 +1,93 @@
+PORTWISE PT5 — EVIDENCE / PoC CAPTURE
+======================================
+
+USAGE: Claude Code in C:\Users\ADMIN\Codex\Portwise\PortWise
+  /model claude-sonnet-4-6
+  Read the file PT5_evidence_capture.txt and follow all instructions. TDD. Plan first.
+
+NO LLM/API. Pure Python. Safe. Suite green + ruff clean.
+
+------------------------------------------------------------
+WHY THIS MATTERS
+------------------------------------------------------------
+A pentest finding is only credible with reproducible evidence. PortWise
+currently stores tiny snippets (e.g. body[:200], a header value). A real report
+needs the full SAFE request/response transcript per finding so the reader (and
+a retester) can reproduce it. This makes findings defensible and the report
+client-grade.
+
+------------------------------------------------------------
+WHAT TO BUILD
+------------------------------------------------------------
+
+STEP 1 — Structured transcript on Evidence.
+Extend Evidence (core/models.py) data conventions with an optional structured
+transcript:
+   data["transcript"] = {
+     "request":  {"method","url","headers","body_sent_or_null"},
+     "response": {"status","reason","headers","body_excerpt","body_bytes_len"},
+     "timing_ms": int,
+     "observed_at": iso8601,
+   }
+  - Add a helper Evidence.with_transcript(req, resp, timing) to attach it.
+  - SANITIZE: redact any Authorization/Cookie/Set-Cookie secret values in stored
+    headers (replace with "<redacted>"); cap body_excerpt at a configurable
+    size (default 2 KB) to keep reports small. Never store full credentials.
+
+STEP 2 — Capture transcripts in PoliteHttpClient (fixpack #3).
+  - Make PoliteHttpClient return a rich response object that includes the exact
+    request line, request headers sent, response status/reason/headers, and a
+    bounded response body. Modules pass this through into Evidence.with_transcript().
+  - Add a per-finding raw transcript ONLY for findings that warrant proof
+    (vulnerabilities + indicators). Best-practice/info findings can keep light
+    evidence to avoid bloat.
+
+STEP 3 — Capture for non-HTTP modules too.
+  - SNMP/DNS/NTP/SMTP/FTP modules: store the safe probe + the raw (truncated)
+    response bytes/string they already obtain (e.g. SNMP sysDescr value, DNS
+    answer summary, SMTP banner, FTP anon login transcript) into a transcript-
+    like evidence block with the same sanitization rules.
+
+STEP 4 — Surface evidence in reports.
+  - In the pentest report (PT2) detailed-finding blocks: render the transcript
+    as a monospace, scrollable request/response panel (HTTP) or a labeled
+    raw-output panel (non-HTTP), with secrets shown redacted.
+  - In the dark scan report: show transcript inside the expandable finding row.
+  - Add an "Evidence Appendix" listing every transcript by finding ID.
+
+STEP 5 — Optional evidence export.
+  - Add `--evidence-dir` to the report command: writes each finding's transcript
+    to evidence/<finding_id>.txt (sanitized) so testers can attach raw proof.
+  - This reuses the existing evidence/ folder convention already in the repo.
+
+------------------------------------------------------------
+SANITIZATION RULES (NON-NEGOTIABLE)
+------------------------------------------------------------
+- Redact Authorization, Proxy-Authorization, Cookie, Set-Cookie values.
+- Redact anything matching common secret patterns (api_key=, token=, password=,
+  secret=) in bodies/URLs before storage.
+- Never store more than the configured body cap.
+- This is a safe tool: transcripts are of SAFE probes only; we never captured
+  anything from an exploit because we never exploit.
+
+------------------------------------------------------------
+TESTS (TDD)
+------------------------------------------------------------
+  - test_transcript_attached_to_http_finding
+  - test_secrets_redacted_in_headers
+  - test_secret_patterns_redacted_in_body_and_url
+  - test_body_excerpt_capped
+  - test_non_http_module_transcript (SNMP/DNS)
+  - test_evidence_appendix_lists_all_transcripts
+  - test_evidence_export_writes_sanitized_files
+
+------------------------------------------------------------
+ACCEPTANCE
+------------------------------------------------------------
+- Every vulnerability/indicator finding carries a reproducible, sanitized
+  request/response transcript.
+- Reports render evidence panels + appendix; optional file export works.
+- Secrets are always redacted; bodies bounded.
+- Suite green; ruff clean. Show a finding with its transcript in the report.
+
+STOP after the plan. Wait for confirmation.

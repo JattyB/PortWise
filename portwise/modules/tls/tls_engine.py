@@ -2,20 +2,34 @@ from __future__ import annotations
 
 import socket
 import ssl
-from http.client import HTTPSConnection
 from datetime import datetime, timezone
 from typing import Any
 
-from portwise.core.models import Evidence, Finding, Service, Severity
+from portwise.core.models import Evidence, Finding, FindingCategory, Service, Severity
 from portwise.modules.tls.cert_checks import days_until, parse_cert_time
 from portwise.modules.tls.http_tls_checks import service_suggests_tls
 from portwise.modules.tls.protocol_checks import TLS_PROTOCOLS
+from portwise.utils.http_client import PoliteHttpClient
+
+_BROWSER_UA = (
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+    "AppleWebKit/537.36 (KHTML, like Gecko) "
+    "Chrome/124.0.0.0 Safari/537.36"
+)
 
 
 class TlsEngine:
-    def __init__(self, timeout: float = 5.0, expiring_days: int = 30) -> None:
+    def __init__(
+        self,
+        timeout: float = 5.0,
+        expiring_days: int = 30,
+        http_client: PoliteHttpClient | None = None,
+    ) -> None:
         self.timeout = timeout
         self.expiring_days = expiring_days
+        self.http_client = http_client or PoliteHttpClient()
+        # Tracks TLS versions that the local OpenSSL build cannot test
+        self._runtime_unsupported: set[str] = set()
 
     def should_run(self, service: Service) -> bool:
         return service_suggests_tls(service) or self.detect_tls(service.host, service.port, service.hostname)
@@ -45,25 +59,36 @@ class TlsEngine:
                 description="TLS appeared possible, but the certificate could not be retrieved with the local Python/OpenSSL stack.",
                 evidence_strength=1,
                 type="tls-info",
+                module="tls",
                 evidence=[Evidence("tls-handshake", "Certificate retrieval failed.", 1)],
                 tags=["not-tested"],
+                category=FindingCategory.INFORMATION,
             ))
         findings.extend(self._protocol_findings(service))
         findings.extend(self._hsts_findings(service))
-        findings.append(Finding(
-            title="OCSP Stapling Not Tested",
-            severity=Severity.INFO,
-            asset=service.host,
-            port=service.port,
-            protocol=service.protocol,
-            service=service.service_name,
-            description="OCSP stapling was not tested by the native TLS engine.",
-            evidence_strength=1,
-            type="tls-info",
-            evidence=[Evidence("tls-ocsp", "OCSP stapling check is not implemented in this native engine.", 1)],
-            tags=["not-tested"],
-        ))
+        findings.extend(self._cipher_findings(service))
         return findings
+
+    def _cipher_findings(self, service: Service) -> list[Finding]:
+        from portwise.modules.tls.cipher_checks import run_cipher_checks
+        target = {
+            "host": service.host,
+            "port": service.port,
+            "protocol": service.protocol,
+            "service": service.service_name,
+            "scripts": service.scripts,
+        }
+        return run_cipher_checks(service, target, {}, module="tls")
+
+    def get_capability_notes(self) -> list[str]:
+        """Returns run-level notes about local TLS testing limitations (call after scanning)."""
+        if self._runtime_unsupported:
+            protocols = ", ".join(sorted(self._runtime_unsupported))
+            return [
+                f"TLS protocol testing limited: {protocols} not supported by the local "
+                "OpenSSL build; deprecated-protocol checks skipped for these versions."
+            ]
+        return []
 
     def _fetch_certificate(self, host: str, port: int, server_name: str | None) -> dict[str, Any] | None:
         context = ssl.create_default_context()
@@ -100,8 +125,10 @@ class TlsEngine:
             description="TLS certificate metadata collected.",
             evidence_strength=4,
             type="tls-info",
+            module="tls",
             evidence=[Evidence("tls-certificate", "Certificate metadata retrieved via TLS handshake.", 4, evidence_data)],
             tags=["safe-active"],
+            category=FindingCategory.INFORMATION,
         ))
 
         if not_after:
@@ -124,50 +151,44 @@ class TlsEngine:
                 findings.append(self._tls_finding(service, "TLS Hostname Mismatch", Severity.MEDIUM, str(exc), evidence_data))
         elif subject_cn:
             findings[-1].evidence[0].data["subject_common_name"] = subject_cn
-        key_info = cert.get("subjectPublicKeyInfo")
-        if isinstance(key_info, dict):
-            key_size = key_info.get("key_size")
-            if isinstance(key_size, int) and key_size < 2048:
-                findings.append(self._tls_finding(service, "Weak TLS Certificate Key", Severity.MEDIUM, f"Certificate key size appears weak: {key_size}.", evidence_data))
+
         return findings
 
     def _protocol_findings(self, service: Service) -> list[Finding]:
         findings: list[Finding] = []
         for label, version in TLS_PROTOCOLS.items():
+            self.http_client.throttle(service.host)  # space out raw handshakes per host
             try:
                 supported = self._test_protocol(service.host, service.port, service.hostname, version)
-            except (ValueError, ssl.SSLError) as exc:
-                findings.append(Finding(
-                    title=f"{label} Not Tested",
-                    severity=Severity.INFO,
-                    asset=service.host,
-                    port=service.port,
-                    protocol=service.protocol,
-                    service=service.service_name,
-                    description=f"Local Python/OpenSSL could not test {label}: {exc}",
-                    evidence_strength=1,
-                    type="tls-protocol",
-                    evidence=[Evidence("tls-protocol", "Protocol test unsupported by local runtime.", 1, {"protocol": label})],
-                    tags=["not-tested"],
-                ))
+            except (ValueError, ssl.SSLError):
+                # Local OpenSSL build cannot test this protocol version.
+                # Record it once at engine level; do NOT emit per-host noise.
+                self._runtime_unsupported.add(label)
                 continue
             if not supported:
                 continue
-            severity = Severity.MEDIUM if label in {"TLS 1.0", "TLS 1.1"} else Severity.INFO
-            title = f"{label} Supported" if severity == Severity.INFO else f"{label} Supported"
+            is_deprecated = label in {"TLS 1.0", "TLS 1.1"}
+            severity = Severity.MEDIUM if is_deprecated else Severity.INFO
+            proto_category = FindingCategory.VULNERABILITY if is_deprecated else FindingCategory.INFORMATION
+            poc = f"nmap --script ssl-enum-ciphers -p {service.port} {service.host}    # protocol section lists {label}"
+            desc = f"The service accepted a {label} handshake."
+            if is_deprecated:
+                desc += f" Reproduce / capture POC with:  {poc}"
             findings.append(Finding(
-                title=title,
+                title=f"{label} Supported",
                 severity=severity,
                 asset=service.host,
                 port=service.port,
                 protocol=service.protocol,
                 service=service.service_name,
-                description=f"The service accepted a {label} handshake.",
-                recommendation="Disable deprecated TLS versions. TLS 1.2/1.3 support is informational.",
+                description=desc,
+                recommendation="Disable deprecated TLS versions (require TLS 1.2 minimum). TLS 1.2/1.3 support is informational.",
                 evidence_strength=5,
                 type="tls-protocol",
-                evidence=[Evidence("tls-protocol", f"{label} handshake succeeded.", 5, {"protocol": label})],
+                module="tls",
+                evidence=[Evidence("tls-protocol", f"{label} handshake succeeded.", 5, {"protocol": label, "poc_command": poc})],
                 tags=["safe-active"],
+                category=proto_category,
             ))
         return findings
 
@@ -187,12 +208,11 @@ class TlsEngine:
     def _hsts_findings(self, service: Service) -> list[Finding]:
         findings: list[Finding] = []
         try:
-            conn = HTTPSConnection(service.host, port=service.port, timeout=self.timeout, context=ssl.create_default_context())
-            conn.request("HEAD", "/", headers={"User-Agent": "PortWise/0.1 safe-validation"})
-            response = conn.getresponse()
-        except (OSError, ssl.SSLError):
+            response = self.http_client.request(service.host, service.port, "HEAD", "/", True, timeout=self.timeout)
+        except OSError:
             return findings
         hsts = response.getheader("Strict-Transport-Security", "")
+        hsts_poc = f"nmap --script http-security-headers -p {service.port} {service.host}    # (or) curl -sI https://{service.host}:{service.port}/ | grep -i strict-transport"
         if not hsts:
             findings.append(Finding(
                 title="HSTS Missing",
@@ -201,12 +221,14 @@ class TlsEngine:
                 port=service.port,
                 protocol=service.protocol,
                 service=service.service_name,
-                description="HTTPS response did not include Strict-Transport-Security.",
+                description=f"HTTPS response did not include Strict-Transport-Security. Reproduce / capture POC with:  {hsts_poc}",
                 recommendation="Add HSTS with an appropriate max-age for browser-facing HTTPS applications.",
                 evidence_strength=5,
                 type="tls-http",
-                evidence=[Evidence("tls-hsts", "HSTS header missing on HTTPS response.", 5, {"status": response.status})],
+                module="tls",
+                evidence=[Evidence("tls-hsts", "HSTS header missing on HTTPS response.", 5, {"status": response.status, "poc_command": hsts_poc})],
                 tags=["safe-active", "contextual"],
+                category=FindingCategory.BEST_PRACTICE,
             ))
             return findings
         max_age = self._hsts_max_age(hsts)
@@ -222,8 +244,10 @@ class TlsEngine:
                 recommendation="Use a longer max-age where appropriate for browser-facing applications.",
                 evidence_strength=5,
                 type="tls-http",
+                module="tls",
                 evidence=[Evidence("tls-hsts", "Weak HSTS max-age.", 5, {"hsts": hsts, "max_age": max_age})],
                 tags=["safe-active", "contextual"],
+                category=FindingCategory.BEST_PRACTICE,
             ))
         return findings
 
@@ -259,6 +283,8 @@ class TlsEngine:
             recommendation="Replace or reissue the certificate and align TLS configuration with current policy.",
             evidence_strength=5,
             type="tls-certificate",
+            module="tls",
             evidence=[Evidence("tls-certificate", description, 5, data)],
             tags=["safe-active"],
+            category=FindingCategory.VULNERABILITY,
         )

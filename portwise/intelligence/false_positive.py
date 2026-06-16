@@ -1,9 +1,58 @@
 from __future__ import annotations
 
-from portwise.core.models import Confidence, Finding, Severity
+from portwise.core.models import Confidence, Finding, FindingCategory, Severity
+from portwise.intelligence.constants import BACKPORT_SENSITIVE
+
+BACKPORT_HINTS = BACKPORT_SENSITIVE
+
+_ABOVE_LOW = {Severity.CRITICAL, Severity.HIGH, Severity.MEDIUM}
 
 
-BACKPORT_HINTS = ("openssh", "apache", "nginx", "linux")
+def apply_category_rules(finding: Finding) -> Finding:
+    """Enforce severity caps based on finding category (detection-confidence axis is separate)."""
+    if finding.category == FindingCategory.INFORMATION:
+        finding.severity = Severity.INFO
+    elif finding.category in {FindingCategory.BEST_PRACTICE, FindingCategory.HYGIENE}:
+        if finding.severity in _ABOVE_LOW:
+            finding.severity = Severity.LOW
+    return finding
+
+
+_CONFIDENCE_RANK = {
+    "Confirmed": 0,
+    "Likely": 1,
+    "Possible": 2,
+    "Needs Manual Validation": 3,
+    "Informational": 4,
+    "False Positive Candidate": 5,
+}
+
+
+def dedupe_findings(findings: list[Finding]) -> list[Finding]:
+    """Collapse exact duplicate findings (same endpoint + title), keeping the
+    strongest one. Real scans frequently produce the same finding from more than
+    one code path (e.g. an exposure keyword and a module probe); without this the
+    user sees the same row several times."""
+    best: dict[tuple[str, int, str, str], Finding] = {}
+    order: list[tuple[str, int, str, str]] = []
+    for finding in findings:
+        key = (
+            str(finding.asset),
+            int(finding.port or 0),
+            str(finding.protocol or ""),
+            str(finding.title).strip().lower(),
+        )
+        existing = best.get(key)
+        if existing is None:
+            best[key] = finding
+            order.append(key)
+            continue
+        # Prefer higher detection confidence, then higher evidence strength.
+        new_rank = _CONFIDENCE_RANK.get(str(finding.confidence), 9)
+        old_rank = _CONFIDENCE_RANK.get(str(existing.confidence), 9)
+        if (new_rank, -finding.evidence_strength) < (old_rank, -existing.evidence_strength):
+            best[key] = finding
+    return [best[key] for key in order]
 
 
 def apply_false_positive_rules(finding: Finding, context: str = "unknown") -> Finding:
@@ -37,7 +86,8 @@ def apply_false_positive_rules(finding: Finding, context: str = "unknown") -> Fi
         if finding.confidence == Confidence.NEEDS_MANUAL_VALIDATION:
             finding.confidence = Confidence.POSSIBLE
 
-    if "safe-active" in finding.tags:
-        finding.confidence = Confidence.CONFIRMED
+    # NOTE: The blanket "safe-active → CONFIRMED" rule was removed.
+    # safe-active raises *detection* confidence (handled in confidence.py),
+    # but category and severity are set independently by the module.
 
     return finding

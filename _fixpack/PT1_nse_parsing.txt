@@ -1,0 +1,112 @@
+PORTWISE PT1 — STRUCTURED NSE SCRIPT OUTPUT PARSING (HIGHEST VALUE)
+===================================================================
+
+USAGE: Claude Code in C:\Users\ADMIN\Codex\Portwise\PortWise
+  /model claude-sonnet-4-6
+  Read the file PT1_nse_parsing.txt and follow all instructions. TDD. Plan first.
+
+NO LLM/API. Pure Python. Safe-by-default. Full suite stays green + ruff clean.
+
+------------------------------------------------------------
+WHY THIS MATTERS
+------------------------------------------------------------
+PortWise already runs nmap with -sC (default scripts) and -sV, and parses the
+XML. But the protocol modules (registry.py) only do crude substring checks on a
+flattened `target_text` blob (e.g. SMB greps for "signing: disabled"). That
+means PortWise RE-IMPLEMENTS checks NSE already performed while THROWING AWAY
+NSE's structured output. NSE already produces rich, structured results for:
+  ssl-enum-ciphers, ssh2-enum-algos, smb-security-mode, smb2-security-mode,
+  smb-os-discovery, smb2-time, rdp-ntlm-info, ftp-anon, http-title,
+  http-server-header, http-methods, http-robots.txt, dns-recursion,
+  dns-nsid, snmp-info, snmp-sysdescr, ntp-info, mysql-info, ms-sql-info,
+  rpcinfo, nbstat, ssl-cert, and many more.
+
+Parsing these properly deepens nearly every module for FREE (the data is
+already on disk in the nmap XML). This is the single highest-value addition.
+
+------------------------------------------------------------
+WHAT TO BUILD
+------------------------------------------------------------
+
+STEP 1 — Extend the nmap XML parser to capture script output.
+In portwise/scanners/nmap_parser.py:
+  - For every <port>, parse all child <script id="..." output="..."> elements,
+    INCLUDING their structured <table>/<elem key="..."> children (NSE emits
+    structured tables, not just the flat `output` attr).
+  - Add to the Service model (core/models.py) a field:
+        scripts: dict[str, Any]   # already exists as dict[str,str] — UPGRADE
+    Change Service.scripts to dict[str, Any] holding BOTH:
+        { "<script-id>": {"output": "<flat text>", "data": <parsed structure>} }
+    Keep backward compatibility: where code reads scripts as str, provide the
+    flat output. Add a helper Service.script_text(script_id) -> str and
+    Service.script_data(script_id) -> dict|list|None.
+  - Recursively parse <table>/<elem> into nested dict/list. <elem key="x">v</elem>
+    -> {"x": "v"}; unkeyed <elem> in a <table> -> list items; nested <table>
+    -> nested structure.
+
+STEP 2 — Create a structured NSE accessor module.
+New file: portwise/scanners/nse.py
+  - Strongly-typed-ish helper functions that take a Service and return parsed
+    facts, e.g.:
+       nse_ssl_ciphers(service) -> dict {tls_version: [ {name, kex, strength}...]}
+       nse_ssh_algos(service)   -> dict {kex:[...], encryption:[...], mac:[...], hostkey:[...]}
+       nse_smb_security(service)-> dict {signing, smbv1, dialects, message_signing}
+       nse_smb_os(service)      -> dict {os, computer_name, domain, workgroup, fqdn}
+       nse_rdp_ntlm(service)    -> dict {target_name, dns_domain, product_version, nla}
+       nse_ftp_anon(service)    -> bool
+       nse_http_methods(service)-> list[str]
+       nse_dns_recursion(service)-> bool
+       nse_snmp_info(service)   -> dict
+       nse_ssl_cert(service)    -> dict {subject, issuer, sans, sig_alg, pubkey_bits, not_before, not_after}
+    Each returns None/empty gracefully if the script wasn't run.
+
+STEP 3 — Rewire modules to PREFER structured NSE data, fall back to native.
+In registry.py and the tls/smb/http engines:
+  - SMB module: use nse_smb_security() + nse_smb_os() instead of substring
+    greps. Report SMBv1, signing-not-required, OS/domain disclosure from
+    structured data with strength=5 (NSE is authoritative) instead of strength=4
+    guesses. Keep the native fallback when NSE data is absent.
+  - SSH module: use nse_ssh_algos() to report weak KEX (diffie-hellman-group1,
+    group14-sha1), weak ciphers (cbc, arcfour, 3des), weak MACs (hmac-md5,
+    hmac-sha1-96). These are real PT findings PortWise currently can't make.
+  - RDP module: use nse_rdp_ntlm() for NLA status + product/version + domain.
+  - FTP module: use nse_ftp_anon() to corroborate the native anon check (raise
+    confidence to CONFIRMED when both agree).
+  - DNS module: use nse_dns_recursion() to corroborate native recursion check.
+  - HTTP module: use nse_http_methods() to corroborate OPTIONS Allow parsing.
+  - TLS cert: use nse_ssl_cert() to enrich/cross-check the native cert fetch
+    (esp. signature algorithm — flag sha1WithRSA as weak; this is currently missing).
+
+STEP 4 — Confidence rule.
+When BOTH native check and NSE agree -> CONFIRMED. When only NSE -> LIKELY
+(strength 5) since NSE is authoritative but we didn't independently verify.
+When only native -> existing logic. Tie into the category model from fix #1
+(these are vulnerabilities, not best-practice).
+
+------------------------------------------------------------
+TESTS (TDD — write FIRST, use canned nmap XML fixtures)
+------------------------------------------------------------
+Add tests/fixtures/nmap_nse_*.xml with realistic NSE output for:
+  ssl-enum-ciphers (with weak RC4/3DES), ssh2-enum-algos (with weak kex),
+  smb-security-mode (signing disabled, smbv1), rdp-ntlm-info,
+  ssl-cert (sha1 signature).
+New tests/test_nse.py:
+  - test_parse_nested_script_tables
+  - test_ssl_ciphers_extracts_weak_suites
+  - test_ssh_algos_flags_weak_kex
+  - test_smb_security_structured_beats_substring
+  - test_ssl_cert_sha1_signature_detected
+  - test_missing_script_returns_empty_gracefully
+  - test_service_scripts_backward_compat_str_access
+
+------------------------------------------------------------
+ACCEPTANCE
+------------------------------------------------------------
+- NSE structured output is parsed and consumed, not re-implemented.
+- SMB/SSH/RDP/TLS modules produce deeper, higher-confidence findings.
+- New findings possible: weak SSH algos, SHA1 cert signature (PT4 adds full
+  cipher reporting).
+- Backward compatible; full suite green; ruff clean.
+- Show before/after findings on a fixture with rich NSE output.
+
+STOP after the plan. Wait for confirmation.

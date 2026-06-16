@@ -7,12 +7,12 @@ from typing import Any
 from portwise.core.config import PortWiseConfig, Profile
 from portwise.core.models import Asset, Finding, RunResult, RunState, Service
 from portwise.core.module_runner import execute_safe_modules, module_summary
-from portwise.core.progress import PHASE_DONE, PHASE_FAILED, ProgressTracker
+from portwise.core.progress import ProgressTracker
 from portwise.core.routing import module_target_counts, route_assets, write_target_files
-from portwise.core.service_groups import ServiceDetectionGroup, group_hosts_by_ports, prepare_group_files
+from portwise.core.service_groups import group_hosts_by_ports, prepare_group_files
 from portwise.intelligence.confidence import apply_confidence
-from portwise.intelligence.cve_placeholder import enrich_services_with_cves
-from portwise.intelligence.false_positive import apply_false_positive_rules
+from portwise.intelligence.cve_enrichment import enrich_services_with_cves
+from portwise.intelligence.false_positive import apply_category_rules, apply_false_positive_rules, dedupe_findings
 from portwise.modules.exposure.exposure_engine import evaluate_exposure
 from portwise.modules.http.http_engine import HttpEngine
 from portwise.modules.tls.tls_engine import TlsEngine
@@ -48,6 +48,14 @@ def run_scan(
     nmap = NmapRunner(workspace, timeout_seconds=timeout)
     live_hosts_file = workspace / "scans" / "live_hosts.txt"
     latest = workspace / "runs" / "latest.json"
+    # -Pn behaviour: treat every supplied target as live so hosts that block ICMP
+    # (but have open ports) are still port-scanned. Default on, since PortWise is
+    # typically pointed at a known target list. Turn off for large ranges.
+    assume_hosts_up = bool(config.scanner.get("assume_hosts_up", True))
+    if assume_hosts_up and state.targets_loaded:
+        state.live_hosts = sorted(set(state.targets_loaded))
+        _write_live_hosts(live_hosts_file, state.live_hosts)
+        state.generated_files.append(str(live_hosts_file))
     if progress:
         progress.update_counters(targets_total=len(state.targets_loaded))
         progress.start_phase("Target validation", f"{len(state.targets_loaded)} targets loaded")
@@ -202,7 +210,14 @@ def run_scan(
         if progress:
             services = _services_from_assets(run.assets)
             progress.start_phase("CVE enrichment", f"enriching {len(services)} services/products/CPEs")
-        cve_findings, cve_notes = enrich_services_with_cves(_services_from_assets(run.assets), workspace / "cache" / "cve", enabled=True)
+        cve_cfg = config.raw.get("cve", {}) if isinstance(config.raw.get("cve"), dict) else {}
+        cve_findings, cve_notes = enrich_services_with_cves(
+            _services_from_assets(run.assets),
+            workspace / "cache" / "cve",
+            enabled=True,
+            include_keyword_only=bool(cve_cfg.get("include_keyword_only", False)),
+            collapse_version_unknown=bool(cve_cfg.get("collapse_version_unknown", True)),
+        )
         run.findings.extend(cve_findings)
         run.evidence.extend([evidence for finding in cve_findings for evidence in finding.evidence])
         state.module_errors.extend(cve_notes)
@@ -219,6 +234,7 @@ def run_scan(
             progress.skip_phase("CVE enrichment", "Dry-run mode; CVE providers not queried.")
     elif progress:
         progress.skip_phase("CVE enrichment", "CVE enrichment disabled by profile.")
+    run.findings = dedupe_findings(run.findings)
     run.metadata["state"] = state.to_dict()
     run.metadata["module_target_counts"] = module_target_counts(routes)
     run.finish()
@@ -258,6 +274,7 @@ def analyze_assets(
 
     processed: list[Finding] = []
     for finding in findings:
+        apply_category_rules(finding)
         apply_confidence(finding, safe_active="safe-active" in finding.tags)
         apply_false_positive_rules(finding, context=context)
         processed.append(finding)
@@ -266,14 +283,34 @@ def analyze_assets(
     routes = route_assets(assets, probe_tls=False)
     run.metadata["module_targets"] = {key: [asdict(target) for target in value] for key, value in routes.items()}
     run.metadata["module_target_counts"] = module_target_counts(routes)
+    allow_active = bool(enable_http or enable_tls)
+    analyze_cfg = dict(module_config or {})
+    analyze_cfg.setdefault("context", context)
+    if not allow_active:
+        # Offline XML analysis: parse evidence only, no network probes.
+        analyze_cfg.update({
+            "ssh_algo_probe": False,
+            "smb_native_probe": False,
+            "ftp_anonymous_check": False,
+            "snmp_default_community_check": False,
+        })
+    # plaintext is pure classification (no network) so it always runs; the
+    # remote-service modules parse NSE evidence and only touch the network when
+    # active mode is enabled.
     enabled = {
         "tls": enable_tls,
         "http": enable_http,
         "exposure": enable_exposure,
+        "plaintext": True,
+        "ssh": True,
+        "smb": True,
+        "rdp": True,
+        "ftp": True,
+        "snmp": True,
     }
     module_results, module_findings = execute_safe_modules(
         routes,
-        config=module_config or {"context": context},
+        config=analyze_cfg,
         enabled_modules=enabled,
         dry_run=dry_run_modules,
     )
@@ -285,6 +322,7 @@ def analyze_assets(
         run.findings.extend(cve_findings)
         run.evidence.extend([evidence for finding in cve_findings for evidence in finding.evidence])
         run.metadata["cve_notes"] = cve_notes
+    run.findings = dedupe_findings(run.findings)
     run.finish()
     return run
 
@@ -329,6 +367,10 @@ def _enabled_modules(profile: Profile) -> dict[str, bool]:
         mapped = aliases.get(key, key)
         if mapped:
             enabled[mapped] = bool(value)
+    # These safety-relevant modules are always-on unless a profile explicitly
+    # disables them, so existing user configs benefit without edits.
+    enabled.setdefault("exposure", True)
+    enabled.setdefault("plaintext", True)
     return enabled
 
 

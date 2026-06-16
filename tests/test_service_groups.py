@@ -46,12 +46,14 @@ def test_tcp_group_command_generation(tmp_path: Path) -> None:
 
     command = runner.build_service_detection_command("tcp", groups[0])
 
-    assert command == [
-        "nmap",
-        "-sV",
-        "--version-light",
-        "-sC",
-        "--reason",
+    assert command[:4] == ["nmap", "-sV", "--version-light", "-sC"]
+    assert "--script" in command
+    scripts = command[command.index("--script") + 1]
+    assert "ssh2-enum-algos" in scripts
+    assert "smb-security-mode" in scripts and "smb2-security-mode" in scripts
+    assert "ssl-enum-ciphers" in scripts
+    assert "--reason" in command
+    assert command[-6:] == [
         "-p",
         "22,80,443",
         "-iL",
@@ -68,12 +70,11 @@ def test_udp_group_command_generation(tmp_path: Path) -> None:
 
     command = runner.build_service_detection_command("udp", groups[0])
 
-    assert command == [
-        "nmap",
-        "-sU",
-        "-sV",
-        "--version-light",
-        "--reason",
+    assert command[:4] == ["nmap", "-sU", "-sV", "--version-light"]
+    assert "--script" in command
+    scripts = command[command.index("--script") + 1]
+    assert "snmp-info" in scripts
+    assert command[-6:] == [
         "-p",
         "53,161",
         "-iL",
@@ -97,7 +98,7 @@ def test_merging_duplicate_services_keeps_richer_record() -> None:
             product="nginx",
             version="1.24.0",
             cpes=["cpe:/a:nginx:nginx:1.24.0"],
-            scripts={"ssl-cert": "subject=example"},
+            scripts={"ssl-cert": {"output": "subject=example", "data": {}}},
             confidence=10,
             source_file="04_tcp_services_tcp_group_001.xml",
         )
@@ -109,7 +110,7 @@ def test_merging_duplicate_services_keeps_richer_record() -> None:
     assert len(merged[0].services) == 1
     assert service.product == "nginx"
     assert service.version == "1.24.0"
-    assert service.scripts["ssl-cert"] == "subject=example"
+    assert service.scripts["ssl-cert"]["output"] == "subject=example"
     assert service.source_file == "04_tcp_services_tcp_group_001.xml"
 
 
