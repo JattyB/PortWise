@@ -247,6 +247,18 @@ def run_scan(
         progress=progress,
     )
 
+    _run_screenshot_phase(
+        workspace=workspace,
+        config=config,
+        module_config=module_config,
+        routes=routes,
+        run=run,
+        state=state,
+        dry_run=dry_run,
+        no_modules=no_modules,
+        progress=progress,
+    )
+
     run.findings = dedupe_findings(run.findings)
     run.metadata["state"] = state.to_dict()
     run.metadata["module_target_counts"] = module_target_counts(routes)
@@ -308,6 +320,56 @@ def _run_web_engines_phase(
     if progress:
         progress.update_counters(findings_found=len(run.findings))
         progress.finish_phase("Web engine orchestration", message=f"{len(web_findings)} engine finding(s)")
+
+
+def _run_screenshot_phase(
+    *,
+    workspace: Path,
+    config: PortWiseConfig,
+    module_config: dict[str, Any],
+    routes: dict[str, list[ModuleTarget]],
+    run: RunResult,
+    state: RunState,
+    dry_run: bool,
+    no_modules: bool,
+    progress: ProgressTracker | None,
+) -> None:
+    """Capture optional gowitness screenshots of web services at full depth."""
+    http_targets = routes.get("http_targets", [])
+    depth = str(module_config.get("validation_level", config.scanner.get("validation_level", "recon")))
+    shots_cfg = config.raw.get("screenshots", {}) if isinstance(config.raw.get("screenshots"), dict) else {}
+
+    if no_modules or dry_run or depth != "full" or not http_targets or not bool(shots_cfg.get("enabled", True)):
+        reason = (
+            "Disabled by --no-modules" if no_modules else
+            "Dry-run mode" if dry_run else
+            f"depth is '{depth}', not full" if depth != "full" else
+            "No web targets" if not http_targets else
+            "Disabled by config"
+        )
+        state.skipped_phases.append(f"screenshots: {reason}.")
+        if progress:
+            progress.skip_phase("Screenshot capture", f"{reason}.")
+        return
+
+    from portwise.intelligence.screenshots import run_screenshots
+
+    out_dir = str(workspace / "evidence" / "screenshots")
+    if progress:
+        progress.start_phase("Screenshot capture", f"gowitness over {len(http_targets)} web target(s)")
+    engine_config = {**module_config, "screenshots": shots_cfg}
+    shot_findings, shot_notes = run_screenshots(
+        http_targets,
+        engine_config,
+        out_dir=out_dir,
+        existing_findings=run.findings,
+    )
+    run.findings.extend(shot_findings)
+    run.evidence.extend([evidence for finding in shot_findings for evidence in finding.evidence])
+    state.module_errors.extend(shot_notes)
+    if progress:
+        progress.update_counters(findings_found=len(run.findings))
+        progress.finish_phase("Screenshot capture", message=f"{len(shot_findings)} screenshot(s)")
 
 
 def analyze_assets(

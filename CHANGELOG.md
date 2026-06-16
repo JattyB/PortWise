@@ -9,6 +9,16 @@ evidence-backed report. The operator controls **depth** (`recon` = fast
 enumeration, `full` = complete active assessment) and **scope** (intrusive or
 credentialed actions are explicit opt-in per engagement).
 
+### Phase 3 — screenshot evidence
+- Orchestrate **gowitness** (optional) to screenshot each discovered web service
+  at full depth. Version-robust: tries multiple gowitness argument forms and
+  accepts whichever produces a PNG.
+- Image paths are attached to matching web findings' evidence and surfaced via a
+  dedicated "Web Service Screenshot Captured" finding; the POC bundle references
+  the screenshot per finding.
+- New `screenshots:` config section; new "Screenshot capture" scan phase. Absent
+  binary skips cleanly with a handoff command.
+
 ### Phase 2 — web depth (optional engines)
 - Orchestrate **nuclei** (optional): run against discovered web targets at full
   depth, parse `-jsonl` into Findings with severity + CVE/CVSS mapping, tagged

@@ -102,6 +102,15 @@ web_engines:
     match_codes: ""       # e.g. "200,204,301,302,307,401,403"; default ffuf -ac calibration
     extra_args: []
 
+# Optional screenshot evidence via gowitness. Runs at 'full' depth when the
+# binary is on PATH; image paths are attached to web findings and the POC bundle.
+screenshots:
+  enabled: true
+  gowitness:
+    enabled: true
+    timeout: 60
+    extra_args: []
+
 cve:
   enabled: true
   nvd_enabled: true
