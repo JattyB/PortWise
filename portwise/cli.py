@@ -53,6 +53,7 @@ def build_parser() -> argparse.ArgumentParser:
     scan_cmd.add_argument("--timeout", type=int)
     scan_cmd.add_argument("--no-cve", action="store_true")
     scan_cmd.add_argument("--no-modules", action="store_true")
+    scan_cmd.add_argument("--concurrency", type=int, default=None, help="Max hosts checked in parallel by modules (default 10; per-host work stays serialized).")
     scan_cmd.add_argument("--no-progress", action="store_true", help="Disable live progress output and only print the JSON command summary.")
     scan_cmd.add_argument("--polite", action="store_true", help="4× request delays and halved budget. For sensitive targets.")
     scan_cmd.add_argument("--aggressive", action="store_true", help="Reduced delays for authorized lab/CTF use only.")
@@ -159,6 +160,8 @@ def main(argv: list[str] | None = None) -> int:
             config.scanner["validation_level"] = effective_vl
             config.scanner["internet_facing"] = args.internet_facing
             config.scanner["udp_service_detection_on_open_filtered"] = args.udp_open_filtered
+            if args.concurrency is not None:
+                config.scanner["module_concurrency"] = max(1, args.concurrency)
             if args.polite:
                 config.raw["politeness_mode"] = "polite"
             elif args.aggressive:

@@ -26,6 +26,11 @@ scanner:
   tcp_top_ports: 1000
   tcp_full_scan: true
 
+  # Module execution concurrency. Module checks run in parallel across hosts
+  # (work for any single host stays serialized to preserve per-host throttle).
+  # Override per run with --concurrency.
+  module_concurrency: 10
+
   # UDP service detection is intentionally limited to confirmed open UDP ports
   # unless this is explicitly enabled.
   udp_top_1000: true

@@ -9,6 +9,15 @@ evidence-backed report. The operator controls **depth** (`recon` = fast
 enumeration, `full` = complete active assessment) and **scope** (intrusive or
 credentialed actions are explicit opt-in per engagement).
 
+### Phase 1 — parallelism
+- Module checks now run through a bounded thread pool: work is parallelized
+  **across hosts** while all work for a single host stays **serialized**, so
+  per-host throttle/politeness and circuit-breaker behavior are preserved.
+- Output ordering is deterministic — results are reassembled in module → target
+  order regardless of completion order.
+- Concurrency is configurable via `scanner.module_concurrency` (default 10) or
+  the `--concurrency` flag.
+
 ### Phase 0 — foundation + rename
 - Renamed the `safe` assessment depth to **`recon`** across config, CLI choices
   (`--validation-level recon|full`), profiles, docstrings, comments, and tests.
