@@ -234,6 +234,19 @@ def run_scan(
             progress.skip_phase("CVE enrichment", "Dry-run mode; CVE providers not queried.")
     elif progress:
         progress.skip_phase("CVE enrichment", "CVE enrichment disabled by profile.")
+
+    _run_web_engines_phase(
+        config=config,
+        profile=profile,
+        module_config=module_config,
+        routes=routes,
+        run=run,
+        state=state,
+        dry_run=dry_run,
+        no_modules=no_modules,
+        progress=progress,
+    )
+
     run.findings = dedupe_findings(run.findings)
     run.metadata["state"] = state.to_dict()
     run.metadata["module_target_counts"] = module_target_counts(routes)
@@ -242,6 +255,59 @@ def run_scan(
     if progress:
         _update_progress_counters(progress, state, run)
     return run
+
+
+def _run_web_engines_phase(
+    *,
+    config: PortWiseConfig,
+    profile: Profile,
+    module_config: dict[str, Any],
+    routes: dict[str, list[ModuleTarget]],
+    run: RunResult,
+    state: RunState,
+    dry_run: bool,
+    no_modules: bool,
+    progress: ProgressTracker | None,
+) -> None:
+    """Orchestrate optional web engines (nuclei/ffuf) at full depth.
+
+    Runs only on real (non-dry-run) scans at `full` depth when web targets exist.
+    Absent binaries skip cleanly and record handoff notes; the pipeline is never
+    broken by a missing engine.
+    """
+    http_targets = routes.get("http_targets", [])
+    depth = str(module_config.get("validation_level", config.scanner.get("validation_level", "recon")))
+    web_cfg = config.raw.get("web_engines", {}) if isinstance(config.raw.get("web_engines"), dict) else {}
+
+    if no_modules or dry_run or depth != "full" or not http_targets or not bool(web_cfg.get("enabled", True)):
+        reason = (
+            "Disabled by --no-modules" if no_modules else
+            "Dry-run mode" if dry_run else
+            f"depth is '{depth}', not full" if depth != "full" else
+            "No web targets" if not http_targets else
+            "Disabled by config"
+        )
+        state.skipped_phases.append(f"web_engines: {reason}.")
+        if progress:
+            progress.skip_phase("Web engine orchestration", f"{reason}.")
+        return
+
+    from portwise.intelligence.web_engines import run_web_engines
+
+    if progress:
+        progress.start_phase("Web engine orchestration", f"nuclei/ffuf over {len(http_targets)} web target(s)")
+    engine_config = {**module_config, "web_engines": web_cfg}
+    web_findings, web_notes = run_web_engines(
+        http_targets,
+        engine_config,
+        existing_findings=run.findings,
+    )
+    run.findings.extend(web_findings)
+    run.evidence.extend([evidence for finding in web_findings for evidence in finding.evidence])
+    state.module_errors.extend(web_notes)
+    if progress:
+        progress.update_counters(findings_found=len(run.findings))
+        progress.finish_phase("Web engine orchestration", message=f"{len(web_findings)} engine finding(s)")
 
 
 def analyze_assets(

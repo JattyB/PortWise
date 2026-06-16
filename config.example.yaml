@@ -84,6 +84,24 @@ http:
     - /login
     - /manager/html
 
+# Optional external web engines. Run only at 'full' depth, only when the binary
+# is on PATH; when absent PortWise skips and emits the equivalent handoff command.
+web_engines:
+  enabled: true
+  nuclei:
+    enabled: true
+    timeout: 600
+    severity: ""          # e.g. "critical,high,medium" to limit templates
+    extra_args: []
+  ffuf:
+    enabled: true
+    timeout: 600
+    # Point at a SecLists (or other) wordlist to enable ffuf content discovery.
+    # Without a valid wordlist path ffuf is skipped with a handoff command.
+    wordlist: ""
+    match_codes: ""       # e.g. "200,204,301,302,307,401,403"; default ffuf -ac calibration
+    extra_args: []
+
 cve:
   enabled: true
   nvd_enabled: true

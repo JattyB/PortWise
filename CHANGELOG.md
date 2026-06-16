@@ -9,6 +9,17 @@ evidence-backed report. The operator controls **depth** (`recon` = fast
 enumeration, `full` = complete active assessment) and **scope** (intrusive or
 credentialed actions are explicit opt-in per engagement).
 
+### Phase 2 — web depth (optional engines)
+- Orchestrate **nuclei** (optional): run against discovered web targets at full
+  depth, parse `-jsonl` into Findings with severity + CVE/CVSS mapping, tagged
+  `external-engine`; folded through the existing dedup/confidence pipeline.
+- Orchestrate **ffuf** (optional) with configurable external wordlist
+  (`web_engines.ffuf.wordlist`, e.g. SecLists); results fold into content
+  discovery and skip paths already reported by the native crawler.
+- Both engines run only at `full` depth, only when the binary is on PATH; absent
+  binaries skip cleanly and record the equivalent handoff command.
+- New `web_engines:` config section; new "Web engine orchestration" scan phase.
+
 ### Phase 1 — parallelism
 - Module checks now run through a bounded thread pool: work is parallelized
   **across hosts** while all work for a single host stays **serialized**, so

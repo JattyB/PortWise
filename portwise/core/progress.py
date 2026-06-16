@@ -197,7 +197,7 @@ def default_scan_phases(profile_steps: list[str]) -> list[str]:
         "udp_services": "Grouped UDP service detection",
     }
     names.extend(labels.get(step, step) for step in profile_steps)
-    names.extend(["Module routing", "Module execution", "CVE enrichment", "Report generation"])
+    names.extend(["Module routing", "Module execution", "CVE enrichment", "Web engine orchestration", "Report generation"])
     return names
 
 
