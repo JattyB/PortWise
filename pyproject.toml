@@ -6,8 +6,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "portwise"
-version = "0.2.0"
-description = "Safe, evidence-first VAPT intelligence and reporting toolkit."
+version = "0.7.0"
+description = "Penetration-testing orchestration, correlation, and evidence-backed reporting platform."
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }

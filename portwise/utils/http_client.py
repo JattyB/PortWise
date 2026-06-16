@@ -181,8 +181,9 @@ class PoliteHttpClient:
         self._apply_delay(host)
         self._request_count[host] = self._request_count.get(host, 0) + 1
 
+        from portwise.utils.net import bracket_host
         scheme = "https" if tls else "http"
-        url = f"{scheme}://{host}:{port}{path}"
+        url = f"{scheme}://{bracket_host(host)}:{port}{path}"
         headers = {
             "User-Agent": self.config.user_agent,
             "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
@@ -317,8 +318,9 @@ class PoliteHttpClient:
         session = self._get_session(host)
 
         if session is not None:
+            from portwise.utils.net import bracket_host
             scheme = "https" if tls else "http"
-            url = f"{scheme}://{host}:{port}{path}"
+            url = f"{scheme}://{bracket_host(host)}:{port}{path}"
             resp = session.request(
                 method, url, headers=headers,
                 timeout=timeout, verify=False, allow_redirects=False,

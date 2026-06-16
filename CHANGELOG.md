@@ -1,23 +1,46 @@
 # Changelog
 
+## v0.7.0 — orchestration platform foundation
+
+PortWise is a penetration-testing orchestration platform: the orchestration +
+correlation + CVE + de-duplication + evidence + reporting engine that ties
+best-in-class scanners and native protocol checks into one prioritized,
+evidence-backed report. The operator controls **depth** (`recon` = fast
+enumeration, `full` = complete active assessment) and **scope** (intrusive or
+credentialed actions are explicit opt-in per engagement).
+
+### Phase 0 — foundation + rename
+- Renamed the `safe` assessment depth to **`recon`** across config, CLI choices
+  (`--validation-level recon|full`), profiles, docstrings, comments, and tests.
+- Removed legacy positioning wording (README, CHANGELOG, docstrings, CLI help)
+  in favor of operator-controlled depth and scope.
+- Added `portwise doctor`: detects installed optional engines (nuclei, ffuf,
+  gowitness, testssl, masscan, nmap, ssh-audit, searchsploit) and reports which
+  checks are therefore available.
+- Added the `ExternalTool` adapter (detect-on-PATH → run-with-timeout → parse
+  JSON → graceful skip + handoff fallback) that all engine integrations use.
+- Added config schema validation with actionable error messages.
+- Verified IPv6 target handling; removed the leftover `_fixpack/` folder.
+
+
 ## v0.6.1 — full PT means full PT
 
-- Removed the confusing three-tier "safe/proof/controlled" gate. There are now
-  just two modes: **full** (run every active check — crawl, content discovery,
-  injection indicators, all module probes, CVE) and **safe** (light recon only,
-  used by quick-triage).
+- Collapsed the depth gate to two levels: **full** (run every active check —
+  crawl, content discovery, injection indicators, all module probes, CVE) and
+  **recon** (fast enumeration, used by quick-triage). (Renamed from the earlier
+  `safe` label in v0.7.0.)
 - `full-vapt`, `internal-vapt`, and `external-vapt` all run at **full** with the
   full TCP port scan and CVE mapping. One command, no flags, same for internal or
   external:
       portwise scan --targets targets.txt --profile full-vapt --config config.yaml --execute
-- `--validation-level` choices simplified to `safe` / `full` (optional; the
-  profile decides by default).
+- `--validation-level` choices simplified to two depths (optional; the profile
+  decides by default).
 
 
 ## v0.6.0 — one-command full PT, redesigned report
 
 ### Same command, internal or external — no restrictions
-- `full-vapt` now runs at `validation_level: controlled`, so a single command
+- `full-vapt` now runs at full assessment depth, so a single command
   performs the full assessment (all modules, active web crawl/content-discovery/
   injection indicators, CVE mapping) with no extra flags:
       portwise scan --targets targets.txt --profile full-vapt --config config.yaml --execute
@@ -191,7 +214,7 @@ and tripping WAFs. Fixed:
 
 ## v0.1.0 - Initial MVP
 
-Initial pre-release MVP for PortWise, a safe, evidence-first VAPT intelligence and reporting tool.
+Initial pre-release MVP for PortWise, an evidence-first VAPT intelligence and reporting tool.
 
 ### Added
 
@@ -211,7 +234,8 @@ Initial pre-release MVP for PortWise, a safe, evidence-first VAPT intelligence a
 - Documentation-safe sample targets, Nmap XML, run JSON, and sample reports.
 - GitHub Actions test workflow for Python 3.11 and 3.12.
 
-### Safety Notes
+### Initial scope notes
 
-- No exploit modules, brute force, password spraying, RCE payloads, fuzzing, DoS checks, write tests, or data dumping.
-- Imported findings and CVE matches are not treated as confirmed without safe validation.
+- The initial MVP shipped read-only native checks only; active/intrusive engines
+  and credentialed checks arrived later as operator-opt-in scope.
+- Imported findings and CVE matches are not treated as confirmed without active validation.

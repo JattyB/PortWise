@@ -10,7 +10,7 @@ class PortWiseModule(ABC):
     name: str = "base"
     description: str = ""
     supported_target_types: tuple[str, ...] = ()
-    safe_by_default: bool = True
+    read_only: bool = True
     timeout: float = 5.0
 
     def execute(self, target: dict[str, Any], config: dict[str, Any] | None = None) -> ModuleResult:

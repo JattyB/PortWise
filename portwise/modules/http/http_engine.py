@@ -158,7 +158,7 @@ class HttpEngine:
                 category=FindingCategory.INFORMATION,
             ))
 
-        validation_level = str(config.get("validation_level", "safe"))
+        validation_level = str(config.get("validation_level", "recon"))
         target_dict: dict = {
             "host": service.host,
             "port": service.port,

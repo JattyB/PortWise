@@ -1,7 +1,9 @@
 # PortWise example configuration.
 #
-# Defaults are intentionally safe and read-only. Increase validation scope only
-# when you have explicit authorization and a documented assessment plan.
+# The operator controls assessment depth ('recon' = fast enumeration, 'full' =
+# complete active assessment) and scope (intrusive or credentialed actions are
+# explicit opt-in per engagement). Run only against systems you are authorized
+# to assess.
 
 project:
   name: PortWise Assessment
@@ -13,7 +15,9 @@ scanner:
   timeout: 5
   default_dry_run: true
   output_dir: scans
-  validation_level: safe
+  # Assessment depth: 'recon' = fast enumeration, 'full' = complete active
+  # assessment. Profiles may override; the CLI --validation-level wins over both.
+  validation_level: recon
   internet_facing: false
 
   # TCP scan behavior. SYN scans fall back to TCP connect scans when the local
@@ -145,7 +149,7 @@ safety:
 
 profiles:
   quick-triage:
-    description: Fast, low-noise service discovery and safe HTTP/TLS hygiene checks.
+    description: Fast, low-noise service discovery and HTTP/TLS hygiene checks (recon depth).
     context: unknown
     nmap_steps:
       - discovery

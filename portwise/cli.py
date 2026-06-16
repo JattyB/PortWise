@@ -27,7 +27,7 @@ from portwise.utils.files import ensure_text, make_json_safe, write_json
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="portwise",
-        description="Safe, evidence-first VAPT intelligence and reporting.",
+        description="Penetration-testing orchestration, correlation, and evidence-backed reporting.",
         epilog="Examples: portwise scan --targets targets.txt --profile full-vapt --config config.yaml --dry-run | portwise report --run runs/latest.json --format all",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
@@ -38,7 +38,7 @@ def build_parser() -> argparse.ArgumentParser:
     init_cmd = sub.add_parser("init", help="Create a PortWise workspace.")
     init_cmd.add_argument("project_name")
 
-    scan_cmd = sub.add_parser("scan", help="Build and optionally run safe nmap scan steps.")
+    scan_cmd = sub.add_parser("scan", help="Build and optionally run nmap scan steps.")
     scan_cmd.add_argument("--targets", required=True, type=Path)
     scan_cmd.add_argument("--profile", required=True)
     scan_cmd.add_argument("--config", type=Path, default=Path("config.yaml"))
@@ -47,8 +47,8 @@ def build_parser() -> argparse.ArgumentParser:
     scan_cmd.add_argument("--execute", action="store_true", help="Execute nmap commands. Use only with authorization.")
     scan_cmd.add_argument("--skip-udp", action="store_true")
     scan_cmd.add_argument("--udp-open-filtered", action="store_true")
-    scan_cmd.add_argument("--validation-level", choices=["safe", "full"], default=None,
-                          help="'safe' = light recon only. 'full' = run every active check (default for full-vapt).")
+    scan_cmd.add_argument("--validation-level", choices=["recon", "full"], default=None,
+                          help="Assessment depth. 'recon' = fast enumeration. 'full' = complete active assessment (default for full-vapt).")
     scan_cmd.add_argument("--internet-facing", action="store_true")
     scan_cmd.add_argument("--timeout", type=int)
     scan_cmd.add_argument("--no-cve", action="store_true")
@@ -116,7 +116,11 @@ def build_parser() -> argparse.ArgumentParser:
     poc_cmd.add_argument("--capture", action="store_true", help="Run safe read-only POC commands (nmap/curl/openssl/dig/ssh-audit) and save output as evidence.")
     poc_cmd.add_argument("--debug", action="store_true")
 
-    sub.add_parser("modules", help="List available safe modules.")
+    sub.add_parser("modules", help="List available modules.")
+
+    doctor_cmd = sub.add_parser("doctor", help="Report which optional engines are installed and what checks they enable.")
+    doctor_cmd.add_argument("--json", action="store_true", help="Emit machine-readable JSON.")
+    doctor_cmd.add_argument("--debug", action="store_true")
 
     sub.add_parser("version", help="Show PortWise version.")
     return parser
@@ -145,12 +149,12 @@ def main(argv: list[str] | None = None) -> int:
             if args.timeout:
                 config.scanner["nmap_timeout_seconds"] = args.timeout
                 config.scanner["timeout"] = args.timeout
-            # Validation level precedence: explicit CLI flag > profile > config default > safe.
+            # Assessment depth precedence: explicit CLI flag > profile > config default > recon.
             effective_vl = (
                 args.validation_level
                 or profile.raw.get("validation_level")
                 or config.scanner.get("validation_level")
-                or "safe"
+                or "recon"
             )
             config.scanner["validation_level"] = effective_vl
             config.scanner["internet_facing"] = args.internet_facing
@@ -309,13 +313,23 @@ def main(argv: list[str] | None = None) -> int:
         if args.command == "poc":
             return _cmd_poc(args)
 
+        if args.command == "doctor":
+            from portwise.core.doctor import collect_engine_status, render_doctor
+
+            statuses = collect_engine_status()
+            if args.json:
+                print(json.dumps([s.to_dict() for s in statuses], indent=2))
+            else:
+                print(render_doctor(statuses))
+            return 0
+
         if args.command == "modules":
             rows = [
                 {
                     "name": module.name,
                     "description": module.description,
                     "supported_target_types": module.supported_target_types,
-                    "safe_by_default": module.safe_by_default,
+                    "read_only": module.read_only,
                 }
                 for module in available_modules()
             ]

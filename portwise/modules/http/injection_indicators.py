@@ -12,7 +12,7 @@ from portwise.utils.http_client import PoliteHttpClient
 # CRITICAL: These checks are INDICATORS ONLY.
 # GET-only, single request per param, no destructive payloads, no exploitation.
 # All findings are POSSIBLE confidence with manual_validation=True.
-# Runs in every mode except the lightweight "safe" mode.
+# Runs at full depth only; skipped at the lightweight "recon" depth.
 # ---------------------------------------------------------------------------
 
 _SQL_ERROR_PATTERNS = re.compile(
@@ -53,14 +53,14 @@ def run_injection_indicators(
     client: PoliteHttpClient,
     target: dict[str, Any],
     homepage_body: str,
-    validation_level: str = "safe",
+    validation_level: str = "recon",
     module: str = "http",
 ) -> list[Finding]:
     """
-    Injection indicator checks. NEVER runs at 'safe' level.
+    Injection indicator checks. NEVER runs at 'recon' depth.
     GET-only, single request per param, POSSIBLE confidence only.
     """
-    if validation_level == "safe":
+    if validation_level == "recon":
         return []
 
     findings: list[Finding] = []

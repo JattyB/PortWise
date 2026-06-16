@@ -81,8 +81,8 @@ _WORDLIST: list[tuple[str, str, str]] = [
     ("/server-info", "config", "Apache Server Info"),
 ]
 
-# Only these are checked at "safe" validation level
-_SAFE_LEVEL_PATHS = {"/robots.txt", "/sitemap.xml", "/.well-known/security.txt"}
+# Only these are checked at "recon" depth
+_RECON_LEVEL_PATHS = {"/robots.txt", "/sitemap.xml", "/.well-known/security.txt"}
 
 # Content signatures: a discovered path is only treated as a CONFIRMED real
 # exposure when its body actually looks like the sensitive file. Without this,
@@ -191,12 +191,12 @@ def run_content_discovery(
     client: PoliteHttpClient,
     target: dict[str, Any],
     config: dict[str, Any],
-    validation_level: str = "safe",
+    validation_level: str = "recon",
     module: str = "http",
 ) -> list[Finding]:
     """
-    Run content discovery. At 'safe' level only fetches robots.txt/sitemap/security.txt.
-    At 'proof' or 'controlled' level runs the full curated wordlist.
+    Run content discovery. At 'recon' depth only fetches robots.txt/sitemap/security.txt.
+    At 'full' depth runs the full curated wordlist.
     Respects PoliteHttpClient budget + circuit breaker.
     """
     web_config = config.get("web_content_discovery", {}) if isinstance(config.get("web_content_discovery"), dict) else {}
@@ -205,11 +205,11 @@ def run_content_discovery(
     if not enabled:
         return []
 
-    is_full = validation_level != "safe"
+    is_full = validation_level != "recon"
     paths_to_check = [
         (path, cat, label)
         for path, cat, label in _WORDLIST
-        if is_full or path in _SAFE_LEVEL_PATHS
+        if is_full or path in _RECON_LEVEL_PATHS
     ]
 
     findings: list[Finding] = []

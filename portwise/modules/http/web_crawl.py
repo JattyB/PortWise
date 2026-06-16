@@ -62,14 +62,14 @@ def run_web_crawl(
     target: dict[str, Any],
     config: dict[str, Any],
     homepage_body: str,
-    validation_level: str = "safe",
+    validation_level: str = "recon",
     module: str = "http",
 ) -> list[Finding]:
     crawl_cfg = config.get("web_crawl", {}) if isinstance(config.get("web_crawl"), dict) else {}
     if not bool(crawl_cfg.get("enabled", True)):
         return []
     # Active by nature (multiple GETs); run only when active web checks are allowed.
-    if validation_level == "safe" and not bool(crawl_cfg.get("force", False)):
+    if validation_level == "recon" and not bool(crawl_cfg.get("force", False)):
         return []
 
     max_pages = int(crawl_cfg.get("max_pages", 8))
