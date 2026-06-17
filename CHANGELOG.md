@@ -9,6 +9,18 @@ evidence-backed report. The operator controls **depth** (`recon` = fast
 enumeration, `full` = complete active assessment) and **scope** (intrusive or
 credentialed actions are explicit opt-in per engagement).
 
+### Phase 6 — reporting
+- **Executive-summary narrative** at the top of the HTML report (severity chips,
+  priority drivers — exploit-available/KEV/cleartext — and a "remediate first"
+  list), plus a reusable text version.
+- **Findings-by-host** grouped view with per-host severity rollup.
+- **CSV findings export** (`--format csv`, included in `all`) — flat,
+  spreadsheet/grep-friendly, with exploit/KEV columns.
+- **Retest diff in HTML**: `report --previous <run.json>` embeds a Fixed/Still
+  Open/New section.
+- Exploit availability surfaced in the findings table, per-host view, and detail.
+  Kept the clean visual theme.
+
 ### Phase 5 — vuln intel depth (exploit availability)
 - Cross-reference version-matched CVE findings (Likely/Confirmed) with public
   exploit availability via **searchsploit/ExploitDB** (JSON) and **nuclei

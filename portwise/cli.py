@@ -72,8 +72,9 @@ def build_parser() -> argparse.ArgumentParser:
 
     report_cmd = sub.add_parser("report", help="Generate report from a run JSON.")
     report_cmd.add_argument("--run", required=True, type=Path)
-    report_cmd.add_argument("--format", choices=["json", "excel", "html", "pentest", "all"], default="json")
+    report_cmd.add_argument("--format", choices=["json", "excel", "html", "pentest", "csv", "all"], default="json")
     report_cmd.add_argument("--output", type=Path)
+    report_cmd.add_argument("--previous", type=Path, help="Previous run JSON; embeds a retest diff (Fixed/Still Open/New) in the HTML report.")
     report_cmd.add_argument("--evidence-dir", type=Path, help="Write per-finding sanitized evidence transcripts to this directory.")
     report_cmd.add_argument("--debug", action="store_true", help="Show traceback for unexpected errors.")
 
@@ -253,6 +254,12 @@ def main(argv: list[str] | None = None) -> int:
             with args.run.open("r", encoding="utf-8") as handle:
                 data = json.load(handle)
             report = build_json_report_from_dict(data)
+            previous = getattr(args, "previous", None)
+            if previous:
+                from portwise.reporting.retest import compare_runs
+                with previous.open("r", encoding="utf-8") as handle:
+                    previous_data = json.load(handle)
+                report["retest"] = compare_runs(previous_data, data)
             output_dir = Path("reports")
             written: list[str] = []
             update_progress_file_phase(Path("."), "Report generation", PHASE_RUNNING, f"Generating {args.format} report output")
@@ -286,6 +293,14 @@ def main(argv: list[str] | None = None) -> int:
                     written.append(str(output))
                 except Exception as exc:
                     report_errors.append(f"pentest: {ensure_text(exc)}")
+            if args.format in {"csv", "all"}:
+                from portwise.reporting.csv_report import write_csv_report
+                output = args.output if args.format == "csv" and args.output else output_dir / "PortWise_Report.csv"
+                try:
+                    write_csv_report(report, output)
+                    written.append(str(output))
+                except Exception as exc:
+                    report_errors.append(f"csv: {ensure_text(exc)}")
             evidence_dir = getattr(args, "evidence_dir", None)
             if evidence_dir:
                 _export_evidence_transcripts(report, Path(evidence_dir), written, report_errors)

@@ -142,6 +142,7 @@ reports:
     - json
     - excel
     - html
+    - csv
 
 progress:
   enabled: true
@@ -329,6 +330,7 @@ profiles:
     reports:
       - json
       - html
+      - csv
 
   offline-analysis:
     description: Parse existing Nmap XML and produce normalized findings without active scanning.
