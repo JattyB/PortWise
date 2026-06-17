@@ -152,6 +152,10 @@ snmp:
     - private
   max_oids: 3
   timeout_seconds: 3
+  # Write-community check: a non-destructive sysName.0 round-trip SET (reads the
+  # value, writes the same value back) to confirm write access. Active write; runs
+  # only at 'full' depth AND when enabled here. Off by default (scope control).
+  write_check: false
 
 ntp:
   timeout_seconds: 3

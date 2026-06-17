@@ -135,6 +135,7 @@ def _target(service: Service, reason: str) -> ModuleTarget:
         confidence=service.confidence,
         routing_reason=reason,
         scripts=service.scripts,
+        hostname=service.hostname,
     )
 
 

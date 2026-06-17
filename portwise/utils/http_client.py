@@ -142,6 +142,11 @@ class PoliteHttpClient:
         self._tripped: set[str] = set()
         self._request_count: dict[str, int] = {}
         self._sessions: dict[str, Any] = {}
+        # Optional name-based vhost defaults. When set, every request sends this
+        # Host header and uses this SNI server name (for name-based / fronted
+        # vhosts) while still connecting to the target IP. Per-call overrides win.
+        self.vhost: str | None = None
+        self.sni: str | None = None
 
     # ------------------------------------------------------------------
     # Public API
@@ -165,11 +170,19 @@ class PoliteHttpClient:
         path: str,
         tls: bool,
         timeout: float = 10.0,
+        host_header: str | None = None,
+        sni: str | None = None,
     ) -> PoliteResponse:
         """
         Perform a polite HTTP request.
         Raises OSError when circuit breaker trips or budget is exhausted.
+
+        ``host_header``/``sni`` override (or fall back to) the per-client vhost/SNI
+        defaults so name-based and TLS-fronted vhosts can be tested while still
+        connecting to the target IP.
         """
+        host_header = host_header or self.vhost
+        sni = sni or self.sni
         if self.is_tripped(host):
             raise OSError(
                 f"[PortWise] Circuit breaker tripped for {host}: host appears to be "
@@ -199,13 +212,15 @@ class PoliteHttpClient:
             "Sec-Fetch-User": "?1",
             "Connection": "close",
         }
+        if host_header:
+            headers["Host"] = host_header
         t_start = time.monotonic()
         last_exc: Exception | None = None
 
         for attempt in range(self.config.max_retries + 1):
             try:
                 status, raw_headers, body = self._do_request(
-                    host, port, method, path, tls, headers, timeout
+                    host, port, method, path, tls, headers, timeout, sni=sni
                 )
                 timing_ms = int((time.monotonic() - t_start) * 1000)
                 meta = {
@@ -314,7 +329,14 @@ class PoliteHttpClient:
         tls: bool,
         headers: dict[str, str],
         timeout: float,
+        sni: str | None = None,
     ) -> tuple[int, list[tuple[str, str]], bytes]:
+        # When an explicit SNI is requested for an HTTPS target, use the stdlib
+        # path with a manually wrapped socket so we connect to the IP but present
+        # the vhost server name in the TLS handshake (name-based / fronted vhosts).
+        if tls and sni:
+            return self._do_request_sni(host, port, method, path, headers, timeout, sni)
+
         session = self._get_session(host)
 
         if session is not None:
@@ -343,6 +365,41 @@ class PoliteHttpClient:
         resp_raw = conn.getresponse()
         body = resp_raw.read(1_048_576)
         return resp_raw.status, list(resp_raw.getheaders()), body
+
+    def _do_request_sni(
+        self,
+        host: str,
+        port: int,
+        method: str,
+        path: str,
+        headers: dict[str, str],
+        timeout: float,
+        sni: str,
+    ) -> tuple[int, list[tuple[str, str]], bytes]:
+        """HTTPS request that connects to ``host`` (IP) but presents ``sni`` as the
+        TLS server name. Used for name-based / Cloudflare-fronted vhosts."""
+        import socket as _socket
+        import ssl as _ssl
+        from http.client import HTTPSConnection
+
+        ctx = _ssl.create_default_context()
+        ctx.check_hostname = False
+        ctx.verify_mode = _ssl.CERT_NONE
+        raw = _socket.create_connection((host, port), timeout=timeout)
+        try:
+            tls_sock = ctx.wrap_socket(raw, server_hostname=sni)
+        except Exception:
+            raw.close()
+            raise
+        conn = HTTPSConnection(host, port=port, timeout=timeout)
+        conn.sock = tls_sock  # pre-wrapped socket; http.client skips its own connect
+        try:
+            conn.request(method, path, headers=headers)
+            resp_raw = conn.getresponse()
+            body = resp_raw.read(1_048_576)
+            return resp_raw.status, list(resp_raw.getheaders()), body
+        finally:
+            conn.close()
 
 
 def client_from_config(config: dict[str, Any]) -> PoliteHttpClient:

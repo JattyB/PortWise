@@ -219,6 +219,7 @@ class ModuleTarget:
     confidence: int | None = None
     routing_reason: str = ""
     scripts: dict[str, Any] = field(default_factory=dict)
+    hostname: str | None = None
 
 
 @dataclass(slots=True)

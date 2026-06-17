@@ -118,6 +118,16 @@ class FindingFactory:
         )
 
 
+def _target_hostname(target: dict[str, Any]) -> str | None:
+    """Return a name-based vhost for the target when a DNS hostname is known and
+    differs from the connection IP; otherwise None (probe the IP directly)."""
+    hostname = str(target.get("hostname") or "").strip()
+    host = str(target.get("host") or "").strip()
+    if not hostname or hostname == host:
+        return None
+    return hostname
+
+
 def target_text(target: dict[str, Any]) -> str:
     return " ".join([
         str(target.get("service", "")),
@@ -190,6 +200,7 @@ class TlsModule(PortWiseModule):
     def run(self, target: dict[str, Any], config: dict[str, Any]) -> ModuleResult:
         from portwise.core.models import Service
 
+        hostname = _target_hostname(target)
         service = Service(
             host=str(target["host"]),
             port=int(target["port"]),
@@ -201,11 +212,16 @@ class TlsModule(PortWiseModule):
             cpes=list(target.get("cpe", []) or []),
             tunnel="ssl",
             scripts=dict(target.get("scripts") or {}),
+            hostname=hostname,
         )
+        tls_client = client_from_config(config)
+        if hostname:
+            tls_client.vhost = hostname
+            tls_client.sni = hostname
         engine = TlsEngine(
             timeout=float(config.get("timeout", 5)),
             expiring_days=int(config.get("tls_expiry_days", 30)),
-            http_client=client_from_config(config),
+            http_client=tls_client,
         )
         findings = engine.run(service)
         for finding in findings:
@@ -221,6 +237,7 @@ class HttpModule(PortWiseModule):
     def run(self, target: dict[str, Any], config: dict[str, Any]) -> ModuleResult:
         from portwise.core.models import Service
 
+        hostname = _target_hostname(target)
         service = Service(
             host=str(target["host"]),
             port=int(target["port"]),
@@ -232,11 +249,18 @@ class HttpModule(PortWiseModule):
             cpes=list(target.get("cpe", []) or []),
             tunnel="ssl" if "tls" in str(target.get("routing_reason", "")).lower() or "https" in str(target.get("service", "")).lower() else None,
             scripts=dict(target.get("scripts") or {}),
+            hostname=hostname,
         )
+        http_client = client_from_config(config)
+        if hostname:
+            # Send Host: <vhost> and use it as SNI so name-based / fronted vhosts
+            # are tested instead of the bare IP.
+            http_client.vhost = hostname
+            http_client.sni = hostname
         engine = HttpEngine(
             timeout=float(config.get("timeout", 5)),
             paths=tuple(config.get("http_paths", []) or ()),
-            client=client_from_config(config),
+            client=http_client,
         )
         findings = engine.run(service, config=config)
         for finding in findings:
@@ -588,9 +612,36 @@ class WinRmSafeModule(PortWiseModule):
     supported_target_types = ("winrm_targets",)
 
     def run(self, target: dict[str, Any], config: dict[str, Any]) -> ModuleResult:
-        severity = Severity.HIGH if int(target.get("port", 0)) == 5985 else Severity.MEDIUM
-        finding = _simple_finding(self.name, target, "WinRM Exposed", severity, "WinRM management endpoint is reachable.", confidence=Confidence.INFORMATIONAL, category=FindingCategory.INFORMATION)
-        return ModuleResult(self.name, target, findings=[finding], evidence=finding.evidence)
+        port = int(target.get("port", 0))
+        severity = Severity.HIGH if port == 5985 else Severity.MEDIUM
+        findings = [_simple_finding(self.name, target, "WinRM Exposed", severity, "WinRM management endpoint is reachable.", confidence=Confidence.INFORMATIONAL, category=FindingCategory.INFORMATION)]
+
+        client = client_from_config(config)
+        host = str(target["host"])
+        tls = port == 5986
+        if not client.is_tripped(host):
+            client.throttle(host)
+            methods = _winrm_auth_methods(client, host, port, tls, _timeout(config, default=5.0))
+            if methods:
+                findings.append(_simple_finding(
+                    self.name, target, "WinRM Authentication Methods Disclosed", Severity.LOW,
+                    f"The WinRM endpoint advertised these authentication methods on an unauthenticated request: {', '.join(methods)}.",
+                    strength=5, confidence=Confidence.CONFIRMED, manual=False, category=FindingCategory.INFORMATION,
+                ))
+                if any(m.lower() == "basic" for m in methods):
+                    if not tls:
+                        findings.append(_simple_finding(
+                            self.name, target, "WinRM Basic Authentication Over Cleartext", Severity.HIGH,
+                            "WinRM offers HTTP Basic authentication over cleartext (port 5985). Credentials are sent base64-encoded with no transport encryption and can be intercepted.",
+                            strength=5, confidence=Confidence.CONFIRMED, manual=False, category=FindingCategory.VULNERABILITY,
+                        ))
+                    else:
+                        findings.append(_simple_finding(
+                            self.name, target, "WinRM Basic Authentication Enabled", Severity.MEDIUM,
+                            "WinRM offers HTTP Basic authentication. Basic auth bypasses Kerberos/Negotiate protections and is brute-forceable; prefer Negotiate/Kerberos only.",
+                            strength=5, confidence=Confidence.CONFIRMED, manual=False, category=FindingCategory.BEST_PRACTICE,
+                        ))
+        return ModuleResult(self.name, target, findings=findings, evidence=[e for f in findings for e in f.evidence])
 
 
 class SnmpSafeModule(PortWiseModule):
@@ -631,6 +682,27 @@ class SnmpSafeModule(PortWiseModule):
                     findings.append(f_community)
                     findings.append(_simple_finding(self.name, target, "SNMP Information Disclosure", Severity.MEDIUM, f"SNMP returned minimal system metadata: {_truncate(value, 160)}", strength=5, confidence=Confidence.CONFIRMED, manual=False, category=FindingCategory.INFORMATION))
                     break
+
+        # Write-community check (active SET; opt-in + full depth only). The probe
+        # reads sysName.0 and writes the same value back, so device state is not
+        # changed — it only confirms whether the community grants write access.
+        write_enabled = bool(snmp_config.get("write_check", config.get("snmp_write_check", False)))
+        depth_full = str(config.get("validation_level", "recon")) == "full"
+        if write_enabled and depth_full:
+            client = client_from_config(config)
+            host = str(target["host"])
+            for community in list(snmp_config.get("communities", ["public", "private"]))[:3]:
+                if client.is_tripped(host):
+                    break
+                client.throttle(host)
+                if _snmp_write_community_check(host, int(target["port"]), str(community), _timeout(config, "snmp", 3.0)):
+                    findings.append(_simple_finding(
+                        self.name, target, "SNMP Write Community Accepted", Severity.CRITICAL,
+                        f"SNMP community '{community}' grants write access (a no-op sysName.0 round-trip SET succeeded). Write access permits reconfiguring or disrupting the device.",
+                        strength=5, confidence=Confidence.CONFIRMED, manual=False, category=FindingCategory.VULNERABILITY,
+                    ))
+                    break
+
         note = _default_cred_note(self.name, target, "snmp " + target_text(target))
         if note:
             findings.append(note)
@@ -693,11 +765,33 @@ class NtpSafeModule(PortWiseModule):
         findings = [_simple_finding(self.name, target, "NTP Service Exposed", Severity.LOW, "NTP service is reachable.", confidence=Confidence.INFORMATIONAL, category=FindingCategory.INFORMATION)]
         client = client_from_config(config)
         host = str(target["host"])
+        port = int(target["port"])
+        timeout = _timeout(config, "ntp", 3.0)
         if not client.is_tripped(host):
             client.throttle(host)
-            response = _ntp_request(host, int(target["port"]), _timeout(config, "ntp", 3.0))
+            response = _ntp_request(host, port, timeout)
             if response:
                 findings.append(_simple_finding(self.name, target, "NTP Information Disclosure", Severity.INFO, f"NTP returned a valid time response; stratum={response.get('stratum')}.", strength=5, confidence=Confidence.CONFIRMED, manual=False, category=FindingCategory.INFORMATION))
+
+        # Mode 6 (control) queries: enable ntpq-style readvar, used for both
+        # information disclosure and DRDoS amplification (CVE-2014-9293 class).
+        if not client.is_tripped(host):
+            client.throttle(host)
+            mode6 = _ntp_mode6_readvar(host, port, timeout)
+            if mode6:
+                f6 = _simple_finding(self.name, target, "NTP Mode 6 Queries Enabled", Severity.MEDIUM, f"The NTP daemon answered an unauthenticated mode-6 (control) readvar query, disclosing daemon variables and providing a DDoS reflection/amplification vector. Response: {_truncate(mode6, 160)}", strength=5, confidence=Confidence.CONFIRMED, manual=False, category=FindingCategory.VULNERABILITY)
+                f6.evidence.append(_probe_transcript_evidence(f"module:{self.name}", "NTP mode-6 control readvar", "NTP mode 6 (control) READVAR", f"udp://{host}:{port}", _truncate(mode6, 200)))
+                findings.append(f6)
+
+        # monlist (mode 7) — classic high-amplification reflection (CVE-2013-5211).
+        if not client.is_tripped(host):
+            client.throttle(host)
+            monlist_size = _ntp_monlist(host, port, timeout)
+            if monlist_size:
+                fm = _simple_finding(self.name, target, "NTP monlist Enabled", Severity.HIGH, f"The NTP daemon responded to a mode-7 monlist (MON_GETLIST_1) request with {monlist_size} bytes. monlist is a high-amplification DDoS reflection vector (CVE-2013-5211) and discloses recent client addresses.", strength=5, confidence=Confidence.CONFIRMED, manual=False, category=FindingCategory.VULNERABILITY)
+                fm.cve_id = "CVE-2013-5211"
+                fm.references = ["https://nvd.nist.gov/vuln/detail/CVE-2013-5211"]
+                findings.append(fm)
         return ModuleResult(self.name, target, findings=findings, evidence=[e for f in findings for e in f.evidence])
 
 
@@ -823,9 +917,30 @@ class MailSafeModule(PortWiseModule):
         return ModuleResult(self.name, target, findings=findings, evidence=[e for f in findings for e in f.evidence])
 
 
+# Known SSL-VPN / appliance login-portal paths per vendor (read-only confirmation).
+_VPN_PORTAL_PATHS: dict[str, list[str]] = {
+    "fortinet": ["/remote/login", "/remote/info"],
+    "globalprotect": ["/global-protect/login.esp", "/sslvpn/Login/Login"],
+    "ivanti": ["/dana-na/auth/url_default/welcome.cgi", "/dana-na/"],
+    "citrix": ["/vpn/index.html", "/logon/LogonPoint/index.html", "/citrix/"],
+    "cisco": ["/+CSCOE+/logon.html", "/+webvpn+/index.html"],
+    "sonicwall": ["/auth.html", "/cgi-bin/welcome"],
+    "generic": ["/remote/login", "/dana-na/", "/vpn/index.html", "/global-protect/login.esp"],
+}
+
+_VPN_VENDOR_HINTS: dict[str, tuple[str, ...]] = {
+    "fortinet": ("fortinet", "fortigate", "fortiweb"),
+    "globalprotect": ("globalprotect", "palo alto", "pan-os"),
+    "ivanti": ("ivanti", "pulse", "connect secure"),
+    "citrix": ("citrix", "netscaler", "adc", "gateway"),
+    "cisco": ("cisco", "asa", "anyconnect", "ftd"),
+    "sonicwall": ("sonicwall",),
+}
+
+
 class VpnApplianceModule(PortWiseModule):
     name = "vpn"
-    description = "VPN/security appliance fingerprint checks only."
+    description = "VPN/security appliance fingerprint and known portal exposure checks."
     supported_target_types = ("vpn_appliance_targets",)
 
     def run(self, target: dict[str, Any], config: dict[str, Any]) -> ModuleResult:
@@ -835,6 +950,31 @@ class VpnApplianceModule(PortWiseModule):
         findings.append(_simple_finding(self.name, target, "Needs Owner Validation", Severity.INFO, "Security appliance exposure should be validated with the service owner.", confidence=Confidence.INFORMATIONAL, category=FindingCategory.INFORMATION))
         if target.get("version"):
             findings.append(_simple_finding(self.name, target, "Appliance Version Disclosure", Severity.LOW, "Appliance version is visible in fingerprint.", category=FindingCategory.VULNERABILITY))
+
+        # Probe known SSL-VPN / appliance login portals to confirm the product and
+        # surface the exposed remote-access entry point. Read-only GETs; no exploits.
+        client = client_from_config(config)
+        context = str(config.get("context", "unknown"))
+        internet = bool(config.get("internet_facing", False))
+        portal_sev = Severity.HIGH if (context == "external" or internet) else Severity.MEDIUM
+        for vendor, paths in _VPN_PORTAL_PATHS.items():
+            if client.is_tripped(str(target["host"])):
+                break
+            # Probe a vendor's paths when its fingerprint matches, or always for the
+            # generic small set when nothing else matched.
+            if vendor != "generic" and not any(hint in text for hint in _VPN_VENDOR_HINTS.get(vendor, (vendor,))):
+                continue
+            probe = _safe_http_fingerprint(target, config, paths, client=client)
+            if probe:
+                status, _title, indicator, url = probe
+                f = _simple_finding(
+                    self.name, target, f"SSL-VPN Login Portal Exposed — {vendor.title()}", portal_sev,
+                    f"A {vendor.title()} remote-access login portal responded at {url} (HTTP {status}). Confirm whether this entry point should be internet-reachable and that the appliance is fully patched.",
+                    strength=4, confidence=Confidence.LIKELY, manual=True, category=FindingCategory.VULNERABILITY,
+                )
+                f.evidence.append(_probe_transcript_evidence(f"module:{self.name}", f"{vendor} SSL-VPN portal probe", f"GET {url}", url, _truncate(indicator, 200)))
+                findings.append(f)
+                break
         return ModuleResult(self.name, target, findings=findings, evidence=[e for f in findings for e in f.evidence])
 
 
@@ -1004,6 +1144,108 @@ def _snmp_get(host: str, port: int, community: str, timeout: float) -> str | Non
         return None
 
 
+def _ber_len(length: int) -> bytes:
+    if length < 0x80:
+        return bytes([length])
+    out = b""
+    while length:
+        out = bytes([length & 0xFF]) + out
+        length >>= 8
+    return bytes([0x80 | len(out)]) + out
+
+
+def _ber_tlv(tag: int, value: bytes) -> bytes:
+    return bytes([tag]) + _ber_len(len(value)) + value
+
+
+def _ber_int(value: int) -> bytes:
+    if value == 0:
+        return _ber_tlv(0x02, b"\x00")
+    out = b""
+    n = value
+    while n:
+        out = bytes([n & 0xFF]) + out
+        n >>= 8
+    if out[0] & 0x80:
+        out = b"\x00" + out
+    return _ber_tlv(0x02, out)
+
+
+def _snmp_message(community: str, pdu: bytes) -> bytes:
+    community_bytes = community.encode("ascii", errors="ignore")
+    body = _ber_int(0) + _ber_tlv(0x04, community_bytes) + pdu  # version v1(0)+community+pdu
+    return _ber_tlv(0x30, body)
+
+
+def _snmp_get_value(host: str, port: int, community: str, oid: bytes, timeout: float) -> bytes | None:
+    """Send an SNMP GET for a single OID and return the raw value TLV bytes."""
+    varbind = _ber_tlv(0x30, oid + _ber_tlv(0x05, b""))  # OID + NULL
+    varbind_list = _ber_tlv(0x30, varbind)
+    pdu = _ber_tlv(0xA0, _ber_int(0x50570001) + _ber_int(0) + _ber_int(0) + varbind_list)
+    packet = _snmp_message(community, pdu)
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
+            sock.settimeout(timeout)
+            sock.sendto(packet, (host, port))
+            data, _ = sock.recvfrom(2048)
+    except Exception:
+        return None
+    return _snmp_extract_value(data, oid)
+
+
+def _snmp_extract_value(data: bytes, oid: bytes) -> bytes | None:
+    """Find the value TLV that follows the requested OID in an SNMP response."""
+    idx = data.find(oid)
+    if idx == -1:
+        return None
+    pos = idx + len(oid)
+    if pos >= len(data):
+        return None
+    tag = data[pos]
+    length = data[pos + 1]
+    start = pos + 2
+    if length & 0x80:
+        num = length & 0x7F
+        length = int.from_bytes(data[pos + 2:pos + 2 + num], "big")
+        start = pos + 2 + num
+    return bytes([tag]) + _ber_len(length) + data[start:start + length]
+
+
+def _snmp_set(host: str, port: int, community: str, oid: bytes, value_tlv: bytes, timeout: float) -> bool:
+    """Send an SNMP SET for oid=value_tlv; return True if error-status is 0."""
+    varbind = _ber_tlv(0x30, oid + value_tlv)
+    varbind_list = _ber_tlv(0x30, varbind)
+    pdu = _ber_tlv(0xA3, _ber_int(0x50570002) + _ber_int(0) + _ber_int(0) + varbind_list)
+    packet = _snmp_message(community, pdu)
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
+            sock.settimeout(timeout)
+            sock.sendto(packet, (host, port))
+            data, _ = sock.recvfrom(2048)
+    except Exception:
+        return False
+    return _snmp_response_error_status(data) == 0
+
+
+def _snmp_response_error_status(data: bytes) -> int | None:
+    """Extract error-status from an SNMP response PDU (0xA2). Returns None if not found."""
+    idx = data.find(b"\xa2")
+    if idx == -1:
+        return None
+    pos = idx + 2  # skip PDU tag + length byte (responses here are short-form)
+    if data[pos] != 0x80 and (data[pos] & 0x80):
+        pos += 1 + (data[pos] & 0x7F)
+    # request-id INTEGER
+    if pos >= len(data) or data[pos] != 0x02:
+        return None
+    pos += 2 + data[pos + 1]
+    # error-status INTEGER
+    if pos >= len(data) or data[pos] != 0x02:
+        return None
+    length = data[pos + 1]
+    return int.from_bytes(data[pos + 2:pos + 2 + length], "big")
+
+
 def _ntp_request(host: str, port: int, timeout: float) -> dict[str, int] | None:
     packet = b"\x1b" + (b"\x00" * 47)
     try:
@@ -1014,6 +1256,42 @@ def _ntp_request(host: str, port: int, timeout: float) -> dict[str, int] | None:
         if len(data) < 48:
             return None
         return {"stratum": data[1], "version": (data[0] >> 3) & 0b111}
+    except Exception:
+        return None
+
+
+def _ntp_mode6_readvar(host: str, port: int, timeout: float) -> str | None:
+    """Send an NTP mode-6 (control) READVAR query. Returns the response text if
+    the daemon answers (mode-6 enabled), else None. Read-only."""
+    # byte0: LI=0, VN=2 (0x10), Mode=6 (0x06) -> 0x16; byte1: opcode 2 (readvar)
+    packet = struct.pack("!BBHHHHH", 0x16, 0x02, 0x0001, 0x0000, 0x0000, 0x0000, 0x0000)
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
+            sock.settimeout(timeout)
+            sock.sendto(packet, (host, port))
+            data, _ = sock.recvfrom(4096)
+        # A mode-6 response has the response bit set in byte 1 and carries data.
+        if len(data) >= 12 and (data[0] & 0x07) == 6:
+            return _truncate(data[12:], 200) or "(mode-6 response received)"
+        return None
+    except Exception:
+        return None
+
+
+def _ntp_monlist(host: str, port: int, timeout: float) -> int | None:
+    """Send an NTP mode-7 monlist (MON_GETLIST_1) request. Returns the response
+    byte count if the daemon answers (monlist enabled), else None. Read-only."""
+    # byte0: VN=2 (0x10), Mode=7 (0x07) -> 0x17; impl=3 (XNTPD); reqcode=42 (0x2a)
+    packet = b"\x17\x00\x03\x2a" + (b"\x00" * 4)
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
+            sock.settimeout(timeout)
+            sock.sendto(packet, (host, port))
+            data, _ = sock.recvfrom(2048)
+        # A monlist reply is a mode-7 response carrying monitor entries.
+        if len(data) > 8 and (data[0] & 0x07) == 7:
+            return len(data)
+        return None
     except Exception:
         return None
 
@@ -1128,6 +1406,32 @@ def _safe_http_fingerprint(target: dict[str, Any], config: dict[str, Any], paths
         if status in {200, 301, 302, 401, 403}:
             return status, title, _truncate(indicator, 220), f"{scheme}://{host}:{port}{path}"
     return None
+
+
+def _winrm_auth_methods(client: PoliteHttpClient, host: str, port: int, tls: bool, timeout: float) -> list[str]:
+    """Enumerate WinRM authentication methods from the WWW-Authenticate header(s)
+    returned for an unauthenticated POST to /wsman. No credentials are sent."""
+    known = ("Negotiate", "Kerberos", "NTLM", "Basic", "CredSSP", "Digest")
+    try:
+        resp = client.request(host, port, "POST", "/wsman", tls, timeout)
+    except Exception:
+        return []
+    raw = " ".join(v for k, v in resp.getheaders() if k.lower() == "www-authenticate")
+    if not raw:
+        return []
+    lowered = raw.lower()
+    return [name for name in known if name.lower() in lowered]
+
+
+def _snmp_write_community_check(host: str, port: int, community: str, timeout: float) -> bool:
+    """Non-destructive SNMP write-community test: read sysName.0, then SET it back
+    to the same value with the supplied community. A success response means the
+    community grants write access. No device state is changed (same value)."""
+    sysname_oid = b"\x06\x08\x2b\x06\x01\x02\x01\x01\x05\x00"  # 1.3.6.1.2.1.1.5.0
+    current = _snmp_get_value(host, port, community, sysname_oid, timeout)
+    if current is None:
+        return False
+    return _snmp_set(host, port, community, sysname_oid, current, timeout)
 
 
 def _smtp_safe_check(host: str, port: int, timeout: float) -> tuple[str, dict[str, bool]]:

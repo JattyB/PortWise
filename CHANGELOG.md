@@ -9,6 +9,20 @@ evidence-backed report. The operator controls **depth** (`recon` = fast
 enumeration, `full` = complete active assessment) and **scope** (intrusive or
 credentialed actions are explicit opt-in per engagement).
 
+### Phase 4 — deepened service checks + vhost/SNI
+- **NTP**: native mode-6 (control readvar) and mode-7 monlist probes — flags
+  amplification/disclosure vectors, monlist tagged CVE-2013-5211 (HIGH).
+- **WinRM**: unauthenticated auth-method enumeration from WWW-Authenticate;
+  flags Basic auth (HIGH over cleartext 5985, MEDIUM over 5986).
+- **VPN appliances**: vendor SSL-VPN login-portal probes (Fortinet, GlobalProtect,
+  Ivanti/Pulse, Citrix/NetScaler, Cisco, SonicWall) confirm exposed entry points.
+- **SNMP**: opt-in, non-destructive write-community check (sysName.0 round-trip
+  SET) — CRITICAL when a community grants write; gated to `full` depth +
+  `snmp.write_check`. Added a small BER encoder/decoder for SNMP SET/GET.
+- **vhost/SNI**: targets carry their DNS hostname; HTTP/TLS modules send a
+  `Host:` header and TLS SNI for the name so name-based / fronted vhosts are
+  tested instead of only the bare IP. New SNI-controlled HTTPS client path.
+
 ### Phase 3 — screenshot evidence
 - Orchestrate **gowitness** (optional) to screenshot each discovered web service
   at full depth. Version-robust: tries multiple gowitness argument forms and
