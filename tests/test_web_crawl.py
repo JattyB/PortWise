@@ -36,7 +36,7 @@ def test_crawl_finds_secret_and_endpoints():
     })
     target = {"host": "h", "port": 443, "protocol": "tcp", "service": "https"}
     findings = run_web_crawl("h", 443, True, 2.0, client, target, {}, homepage,
-                             validation_level="proof")
+                             validation_level="full")
     titles = [f.title for f in findings]
     assert any("Secret Exposed" in t for t in titles)
     assert any("JavaScript Files" in t for t in titles)
@@ -46,7 +46,7 @@ def test_crawl_finds_secret_and_endpoints():
         assert "AKIAABCDEFGHIJKLMNOP" not in f.description
 
 
-def test_crawl_disabled_at_safe_level():
+def test_crawl_disabled_at_recon_level():
     findings = run_web_crawl("h", 443, True, 2.0, _Client({}), {"host":"h","port":443}, {}, "<html></html>",
-                             validation_level="safe")
+                             validation_level="recon")
     assert findings == []

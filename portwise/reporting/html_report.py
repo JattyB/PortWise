@@ -56,7 +56,9 @@ def write_html_report(data: dict[str, Any], output_path: Path) -> Path:
         "<body>",
         _render_header(data, ts),
         _render_stat_cards(data),
+        _render_executive_summary(data),
         _render_charts(findings),
+        _render_retest_diff(data),
         _render_filter_and_table(findings),
         _render_sections(data),
         _render_footer(ts),
@@ -203,6 +205,27 @@ color:var(--muted);font-size:12px;display:flex;justify-content:space-between;fle
 .text-muted{color:var(--muted)}
 .monospace{font-family:var(--mono)}
 .str-bar{display:inline-block;height:7px;background:var(--accent);border-radius:4px;opacity:.85;vertical-align:middle;margin-right:6px}
+/* executive summary */
+.exec-section{padding:8px 36px 4px}
+.exec-card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:22px 24px;box-shadow:var(--shadow)}
+.exec-title{font-size:15px;font-weight:800;letter-spacing:-.2px;margin-bottom:12px;color:var(--ink)}
+.exec-chips{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px}
+.exec-chip{font-size:11px;font-weight:700;border-radius:20px;padding:3px 12px;background:var(--surface-2);border:1px solid var(--border);color:var(--ink-2)}
+.exec-critical{background:#fef2f2;color:#b91c1c;border-color:#fecaca}
+.exec-high{background:#fff7ed;color:#c2410c;border-color:#fed7aa}
+.exec-medium{background:#fffbeb;color:#b45309;border-color:#fde68a}
+.exec-low{background:#eff6ff;color:#1d4ed8;border-color:#bfdbfe}
+.exec-drivers{font-size:13px;color:var(--ink-2);margin-bottom:8px}
+.exec-narrative{font-size:13px;color:var(--ink-2);line-height:1.7;margin-bottom:8px}
+.exec-toplabel{font-size:10.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.7px;font-weight:700;margin:10px 0 6px}
+.exec-top{margin:0 0 0 18px;display:flex;flex-direction:column;gap:6px}
+.exec-top li{font-size:13px;color:var(--ink-2)}
+/* retest diff */
+.retest-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px;margin-bottom:12px}
+.retest-stat{border:1px solid var(--border);border-radius:10px;padding:12px 14px;background:var(--surface-2)}
+.retest-stat .n{font-size:24px;font-weight:800}
+.retest-fixed .n{color:var(--ok)}.retest-new .n{color:var(--high)}.retest-open .n{color:var(--medium)}
+.exploit-badge{background:#fef2f2;border:1px solid var(--critical);color:var(--critical);padding:1px 7px;border-radius:5px;font-size:9.5px;font-weight:700;letter-spacing:.4px;margin-left:6px}
 @media print{body{max-width:none}.filter-row,.search-box,.findings-header .visible-count{display:none}details.collapsible{break-inside:avoid}.site-header{border-radius:0}}
 """
 
@@ -305,6 +328,49 @@ def _render_stat_cards(data: dict[str, Any]) -> str:
         for label, v, c in cards
     )
     return f'<section class="stat-section"><div class="stat-grid">{html_cards}</div></section>'
+
+
+def _render_executive_summary(data: dict[str, Any]) -> str:
+    from portwise.reporting.narrative import executive_summary_html
+    return executive_summary_html(data, esc)
+
+
+def _render_retest_diff(data: dict[str, Any]) -> str:
+    retest = data.get("retest")
+    if not isinstance(retest, dict) or not retest:
+        return ""
+    # Build a per-section rollup (Fixed / Still Open / New).
+    stat_cells: list[str] = []
+    fixed = sum(len(v.get("Fixed", [])) for v in retest.values() if isinstance(v, dict))
+    still = sum(len(v.get("Still Open", [])) for v in retest.values() if isinstance(v, dict))
+    new = sum(len(v.get("New", [])) for v in retest.values() if isinstance(v, dict))
+    stat_cells.append(f'<div class="retest-stat retest-fixed"><div class="n">{fixed}</div><div class="stat-label">Fixed</div></div>')
+    stat_cells.append(f'<div class="retest-stat retest-open"><div class="n">{still}</div><div class="stat-label">Still Open</div></div>')
+    stat_cells.append(f'<div class="retest-stat retest-new"><div class="n">{new}</div><div class="stat-label">New</div></div>')
+
+    rows: list[str] = []
+    for section, statuses in retest.items():
+        if not isinstance(statuses, dict):
+            continue
+        rows.append(
+            f'<tr><td><strong>{esc(section)}</strong></td>'
+            f'<td>{len(statuses.get("Fixed", []))}</td>'
+            f'<td>{len(statuses.get("Still Open", []))}</td>'
+            f'<td>{len(statuses.get("New", []))}</td></tr>'
+        )
+    new_items = []
+    for section, statuses in retest.items():
+        if isinstance(statuses, dict):
+            for item in statuses.get("New", [])[:20]:
+                new_items.append(f'<div class="evidence-item">{esc(section)}: {esc(str(item))}</div>')
+
+    table = (
+        '<table class="mini-table"><thead><tr><th>Section</th><th>Fixed</th><th>Still Open</th><th>New</th></tr></thead>'
+        f'<tbody>{"".join(rows)}</tbody></table>'
+    )
+    new_block = (f'<div class="exec-toplabel">New since previous run</div>{"".join(new_items)}' if new_items else "")
+    content = f'<div class="retest-grid">{"".join(stat_cells)}</div>{table}{new_block}'
+    return f'<div class="section-wrap">{_collapsible("Retest Diff (vs previous run)", content, fixed + still + new, open_=True)}</div>'
 
 
 def _render_charts(findings: list[dict[str, Any]]) -> str:
@@ -529,6 +595,7 @@ def _finding_row_pair(f: dict[str, Any], idx: int) -> list[str]:
     rec = esc(f.get("recommendation", ""))
     cves_html = _cves_html(f.get("cves", []) or [])
     evidence_html = _evidence_html(f.get("evidence", []) or [])
+    exploit_html = _exploit_html(f)
     tags = ", ".join(esc(t) for t in (f.get("tags") or []))
 
     detail = (
@@ -539,12 +606,28 @@ def _finding_row_pair(f: dict[str, Any], idx: int) -> list[str]:
         f'<div class="detail-field"><label>Recommendation</label><p>{rec or _em_dash}</p></div>'
         f'</div>'
         + (f'<div class="detail-field" style="margin-top:10px"><label>Evidence</label>{evidence_html}</div>' if evidence_html else "")
+        + exploit_html
         + (f'<div style="margin-top:8px"><span class="text-muted" style="font-size:10px">TAGS: </span>{tags}</div>' if tags else "")
         + cves_html
         + '</div></td></tr>'
     )
 
     return [row, detail]
+
+
+def _exploit_html(f: dict[str, Any]) -> str:
+    if not f.get("exploit_available"):
+        return ""
+    refs = f.get("exploit_refs") or []
+    items = "".join(f'<div class="evidence-item">{esc(str(r))}</div>' for r in refs[:8])
+    if not items:
+        items = '<div class="evidence-item">A public exploit is known.</div>'
+    return (
+        '<div class="detail-field" style="margin-top:10px">'
+        '<label>Exploit Availability <span class="exploit-badge">EXPLOIT AVAILABLE</span></label>'
+        f'<div class="evidence-items">{items}</div>'
+        '</div>'
+    )
 
 
 def _cves_html(cves: list[dict[str, Any]]) -> str:
@@ -624,7 +707,10 @@ def _render_sections(data: dict[str, Any]) -> str:
     commands = data.get("commands", [])
     services = state.get("services_by_host", {})
 
+    by_host = _per_host_view(findings)
     sections: list[str] = []
+    sections.append(_collapsible("Findings by Host",
+        by_host[0], by_host[1], open_=True))
     sections.append(_collapsible("Confirmed Vulnerabilities",
         _mini_table(sorted(vulns, key=lambda f: str(f.get("priority", "P9")))),
         len(vulns), open_=True))
@@ -646,6 +732,53 @@ def _render_sections(data: dict[str, Any]) -> str:
         _commands_html(commands), len(commands)))
 
     return f'<div class="section-wrap">{"".join(sections)}</div>'
+
+
+def _per_host_view(findings: list[dict[str, Any]]) -> tuple[str, int]:
+    """Group findings by host with a per-host severity rollup. Returns (html, host_count)."""
+    hosts: dict[str, list[dict[str, Any]]] = {}
+    for f in findings:
+        hosts.setdefault(str(f.get("asset", "—")), []).append(f)
+    if not hosts:
+        return ('<div class="empty-msg">No findings to group by host.</div>', 0)
+
+    def host_rank(item: tuple[str, list[dict[str, Any]]]) -> tuple:
+        sevs = [_norm(f.get("severity", "info")).replace("ational", "") for f in item[1]]
+        best = min((_SEV_ORDER.index(s) for s in sevs if s in _SEV_ORDER), default=99)
+        return (best, -len(item[1]))
+
+    blocks: list[str] = []
+    for host, host_findings in sorted(hosts.items(), key=host_rank):
+        counts: dict[str, int] = {}
+        for f in host_findings:
+            s = _norm(f.get("severity", "info")).replace("ational", "")
+            counts[s] = counts.get(s, 0) + 1
+        chips = "".join(
+            f'{_sev_badge(s)} {counts[s]}&nbsp;&nbsp;'
+            for s in _SEV_ORDER if counts.get(s)
+        )
+        rows = "".join(
+            f'<tr>'
+            f'<td>{_sev_badge(_norm(f.get("severity", "info")))}</td>'
+            f'<td>{esc(f.get("title", "—"))}'
+            + ('<span class="exploit-badge">EXPLOIT</span>' if f.get("exploit_available") else "")
+            + ('<span class="kev-badge">KEV</span>' if f.get("kev") else "")
+            + f'</td>'
+            f'<td class="text-muted">{esc(str(f.get("port", "")))}</td>'
+            f'<td class="text-muted">{esc(f.get("module", "—"))}</td>'
+            f'</tr>'
+            for f in sorted(host_findings, key=lambda x: (
+                _SEV_ORDER.index(_norm(x.get("severity", "info")).replace("ational", ""))
+                if _norm(x.get("severity", "info")).replace("ational", "") in _SEV_ORDER else 99))
+        )
+        blocks.append(
+            f'<div style="margin-bottom:14px">'
+            f'<div style="font-weight:700;margin-bottom:6px">{esc(host)} &nbsp;<span class="text-muted" style="font-weight:400">{chips}</span></div>'
+            f'<table class="mini-table"><thead><tr><th>Sev</th><th>Title</th><th>Port</th><th>Module</th></tr></thead>'
+            f'<tbody>{rows}</tbody></table>'
+            f'</div>'
+        )
+    return ("".join(blocks), len(hosts))
 
 
 def _collapsible(title: str, content: str, count: int, open_: bool = False) -> str:

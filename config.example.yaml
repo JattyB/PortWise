@@ -1,7 +1,9 @@
 # PortWise example configuration.
 #
-# Defaults are intentionally safe and read-only. Increase validation scope only
-# when you have explicit authorization and a documented assessment plan.
+# The operator controls assessment depth ('recon' = fast enumeration, 'full' =
+# complete active assessment) and scope (intrusive or credentialed actions are
+# explicit opt-in per engagement). Run only against systems you are authorized
+# to assess.
 
 project:
   name: PortWise Assessment
@@ -13,7 +15,9 @@ scanner:
   timeout: 5
   default_dry_run: true
   output_dir: scans
-  validation_level: safe
+  # Assessment depth: 'recon' = fast enumeration, 'full' = complete active
+  # assessment. Profiles may override; the CLI --validation-level wins over both.
+  validation_level: recon
   internet_facing: false
 
   # TCP scan behavior. SYN scans fall back to TCP connect scans when the local
@@ -21,6 +25,11 @@ scanner:
   tcp_syn_scan_when_privileged: true
   tcp_top_ports: 1000
   tcp_full_scan: true
+
+  # Module execution concurrency. Module checks run in parallel across hosts
+  # (work for any single host stays serialized to preserve per-host throttle).
+  # Override per run with --concurrency.
+  module_concurrency: 10
 
   # UDP service detection is intentionally limited to confirmed open UDP ports
   # unless this is explicitly enabled.
@@ -75,6 +84,33 @@ http:
     - /login
     - /manager/html
 
+# Optional external web engines. Run only at 'full' depth, only when the binary
+# is on PATH; when absent PortWise skips and emits the equivalent handoff command.
+web_engines:
+  enabled: true
+  nuclei:
+    enabled: true
+    timeout: 600
+    severity: ""          # e.g. "critical,high,medium" to limit templates
+    extra_args: []
+  ffuf:
+    enabled: true
+    timeout: 600
+    # Point at a SecLists (or other) wordlist to enable ffuf content discovery.
+    # Without a valid wordlist path ffuf is skipped with a handoff command.
+    wordlist: ""
+    match_codes: ""       # e.g. "200,204,301,302,307,401,403"; default ffuf -ac calibration
+    extra_args: []
+
+# Optional screenshot evidence via gowitness. Runs at 'full' depth when the
+# binary is on PATH; image paths are attached to web findings and the POC bundle.
+screenshots:
+  enabled: true
+  gowitness:
+    enabled: true
+    timeout: 60
+    extra_args: []
+
 cve:
   enabled: true
   nvd_enabled: true
@@ -92,11 +128,21 @@ cve:
   include_keyword_only: false
   collapse_version_unknown: true
 
+# Cross-reference version-matched CVEs with public exploit availability. Local
+# lookups only (no network): searchsploit/ExploitDB and nuclei template presence.
+exploit_intel:
+  enabled: true
+  searchsploit: true
+  nuclei_templates: true
+  # Override the nuclei-templates directory (else ~/nuclei-templates or $NUCLEI_TEMPLATES).
+  nuclei_templates_dir: ""
+
 reports:
   formats:
     - json
     - excel
     - html
+    - csv
 
 progress:
   enabled: true
@@ -116,6 +162,10 @@ snmp:
     - private
   max_oids: 3
   timeout_seconds: 3
+  # Write-community check: a non-destructive sysName.0 round-trip SET (reads the
+  # value, writes the same value back) to confirm write access. Active write; runs
+  # only at 'full' depth AND when enabled here. Off by default (scope control).
+  write_check: false
 
 ntp:
   timeout_seconds: 3
@@ -137,6 +187,24 @@ cache:
   enabled: true
   directory: cache
 
+# Authenticated assessment (operator opt-in, full depth only). Master switch off
+# by default. Supply credentials here or via --cred/--cred-file. Only the creds you
+# provide are used — PortWise never brute forces or guesses.
+authenticated: false
+credentials: []
+  # - service: web          # web/http: Basic auth + form login
+  #   username: admin
+  #   password: admin
+  #   login_url: /login
+  #   username_field: username
+  #   password_field: password
+  # - service: smb          # authenticated SMB via nxc/netexec (orchestrated)
+  #   username: svc_account
+  #   password: "REDACTED"
+  #   domain: CORP
+  # - service: snmp         # community used as an SNMP credential
+  #   community: "REDACTED"
+
 safety:
   no_bruteforce: true
   no_exploitation: true
@@ -145,7 +213,7 @@ safety:
 
 profiles:
   quick-triage:
-    description: Fast, low-noise service discovery and safe HTTP/TLS hygiene checks.
+    description: Fast, low-noise service discovery and HTTP/TLS hygiene checks (recon depth).
     context: unknown
     nmap_steps:
       - discovery
@@ -280,6 +348,7 @@ profiles:
     reports:
       - json
       - html
+      - csv
 
   offline-analysis:
     description: Parse existing Nmap XML and produce normalized findings without active scanning.

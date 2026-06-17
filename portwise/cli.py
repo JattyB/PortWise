@@ -27,7 +27,7 @@ from portwise.utils.files import ensure_text, make_json_safe, write_json
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="portwise",
-        description="Safe, evidence-first VAPT intelligence and reporting.",
+        description="Penetration-testing orchestration, correlation, and evidence-backed reporting.",
         epilog="Examples: portwise scan --targets targets.txt --profile full-vapt --config config.yaml --dry-run | portwise report --run runs/latest.json --format all",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
@@ -38,7 +38,7 @@ def build_parser() -> argparse.ArgumentParser:
     init_cmd = sub.add_parser("init", help="Create a PortWise workspace.")
     init_cmd.add_argument("project_name")
 
-    scan_cmd = sub.add_parser("scan", help="Build and optionally run safe nmap scan steps.")
+    scan_cmd = sub.add_parser("scan", help="Build and optionally run nmap scan steps.")
     scan_cmd.add_argument("--targets", required=True, type=Path)
     scan_cmd.add_argument("--profile", required=True)
     scan_cmd.add_argument("--config", type=Path, default=Path("config.yaml"))
@@ -47,13 +47,17 @@ def build_parser() -> argparse.ArgumentParser:
     scan_cmd.add_argument("--execute", action="store_true", help="Execute nmap commands. Use only with authorization.")
     scan_cmd.add_argument("--skip-udp", action="store_true")
     scan_cmd.add_argument("--udp-open-filtered", action="store_true")
-    scan_cmd.add_argument("--validation-level", choices=["safe", "full"], default=None,
-                          help="'safe' = light recon only. 'full' = run every active check (default for full-vapt).")
+    scan_cmd.add_argument("--validation-level", choices=["recon", "full"], default=None,
+                          help="Assessment depth. 'recon' = fast enumeration. 'full' = complete active assessment (default for full-vapt).")
     scan_cmd.add_argument("--internet-facing", action="store_true")
     scan_cmd.add_argument("--timeout", type=int)
     scan_cmd.add_argument("--no-cve", action="store_true")
     scan_cmd.add_argument("--no-modules", action="store_true")
+    scan_cmd.add_argument("--concurrency", type=int, default=None, help="Max hosts checked in parallel by modules (default 10; per-host work stays serialized).")
     scan_cmd.add_argument("--no-progress", action="store_true", help="Disable live progress output and only print the JSON command summary.")
+    scan_cmd.add_argument("--authenticated", action="store_true", help="Enable authenticated checks using supplied credentials (full depth, explicit opt-in).")
+    scan_cmd.add_argument("--cred", action="append", default=[], metavar="SERVICE:USER:PASS", help="Credential for an authenticated check, e.g. web:admin:admin, smb:CORP/svc:pw, snmp::community. Repeatable.")
+    scan_cmd.add_argument("--cred-file", type=Path, help="YAML file with a 'credentials:' list for authenticated checks.")
     scan_cmd.add_argument("--polite", action="store_true", help="4× request delays and halved budget. For sensitive targets.")
     scan_cmd.add_argument("--aggressive", action="store_true", help="Reduced delays for authorized lab/CTF use only.")
     scan_cmd.add_argument("--debug", action="store_true", help="Show traceback for unexpected errors.")
@@ -71,8 +75,9 @@ def build_parser() -> argparse.ArgumentParser:
 
     report_cmd = sub.add_parser("report", help="Generate report from a run JSON.")
     report_cmd.add_argument("--run", required=True, type=Path)
-    report_cmd.add_argument("--format", choices=["json", "excel", "html", "pentest", "all"], default="json")
+    report_cmd.add_argument("--format", choices=["json", "excel", "html", "pentest", "csv", "all"], default="json")
     report_cmd.add_argument("--output", type=Path)
+    report_cmd.add_argument("--previous", type=Path, help="Previous run JSON; embeds a retest diff (Fixed/Still Open/New) in the HTML report.")
     report_cmd.add_argument("--evidence-dir", type=Path, help="Write per-finding sanitized evidence transcripts to this directory.")
     report_cmd.add_argument("--debug", action="store_true", help="Show traceback for unexpected errors.")
 
@@ -116,7 +121,11 @@ def build_parser() -> argparse.ArgumentParser:
     poc_cmd.add_argument("--capture", action="store_true", help="Run safe read-only POC commands (nmap/curl/openssl/dig/ssh-audit) and save output as evidence.")
     poc_cmd.add_argument("--debug", action="store_true")
 
-    sub.add_parser("modules", help="List available safe modules.")
+    sub.add_parser("modules", help="List available modules.")
+
+    doctor_cmd = sub.add_parser("doctor", help="Report which optional engines are installed and what checks they enable.")
+    doctor_cmd.add_argument("--json", action="store_true", help="Emit machine-readable JSON.")
+    doctor_cmd.add_argument("--debug", action="store_true")
 
     sub.add_parser("version", help="Show PortWise version.")
     return parser
@@ -145,16 +154,19 @@ def main(argv: list[str] | None = None) -> int:
             if args.timeout:
                 config.scanner["nmap_timeout_seconds"] = args.timeout
                 config.scanner["timeout"] = args.timeout
-            # Validation level precedence: explicit CLI flag > profile > config default > safe.
+            # Assessment depth precedence: explicit CLI flag > profile > config default > recon.
             effective_vl = (
                 args.validation_level
                 or profile.raw.get("validation_level")
                 or config.scanner.get("validation_level")
-                or "safe"
+                or "recon"
             )
             config.scanner["validation_level"] = effective_vl
             config.scanner["internet_facing"] = args.internet_facing
             config.scanner["udp_service_detection_on_open_filtered"] = args.udp_open_filtered
+            if args.concurrency is not None:
+                config.scanner["module_concurrency"] = max(1, args.concurrency)
+            _apply_credentials(config, args)
             if args.polite:
                 config.raw["politeness_mode"] = "polite"
             elif args.aggressive:
@@ -246,6 +258,12 @@ def main(argv: list[str] | None = None) -> int:
             with args.run.open("r", encoding="utf-8") as handle:
                 data = json.load(handle)
             report = build_json_report_from_dict(data)
+            previous = getattr(args, "previous", None)
+            if previous:
+                from portwise.reporting.retest import compare_runs
+                with previous.open("r", encoding="utf-8") as handle:
+                    previous_data = json.load(handle)
+                report["retest"] = compare_runs(previous_data, data)
             output_dir = Path("reports")
             written: list[str] = []
             update_progress_file_phase(Path("."), "Report generation", PHASE_RUNNING, f"Generating {args.format} report output")
@@ -279,6 +297,14 @@ def main(argv: list[str] | None = None) -> int:
                     written.append(str(output))
                 except Exception as exc:
                     report_errors.append(f"pentest: {ensure_text(exc)}")
+            if args.format in {"csv", "all"}:
+                from portwise.reporting.csv_report import write_csv_report
+                output = args.output if args.format == "csv" and args.output else output_dir / "PortWise_Report.csv"
+                try:
+                    write_csv_report(report, output)
+                    written.append(str(output))
+                except Exception as exc:
+                    report_errors.append(f"csv: {ensure_text(exc)}")
             evidence_dir = getattr(args, "evidence_dir", None)
             if evidence_dir:
                 _export_evidence_transcripts(report, Path(evidence_dir), written, report_errors)
@@ -309,13 +335,23 @@ def main(argv: list[str] | None = None) -> int:
         if args.command == "poc":
             return _cmd_poc(args)
 
+        if args.command == "doctor":
+            from portwise.core.doctor import collect_engine_status, render_doctor
+
+            statuses = collect_engine_status()
+            if args.json:
+                print(json.dumps([s.to_dict() for s in statuses], indent=2))
+            else:
+                print(render_doctor(statuses))
+            return 0
+
         if args.command == "modules":
             rows = [
                 {
                     "name": module.name,
                     "description": module.description,
                     "supported_target_types": module.supported_target_types,
-                    "safe_by_default": module.safe_by_default,
+                    "read_only": module.read_only,
                 }
                 for module in available_modules()
             ]
@@ -339,6 +375,30 @@ def main(argv: list[str] | None = None) -> int:
 
     parser.print_help()
     return 1
+
+
+def _apply_credentials(config, args) -> None:
+    """Merge --authenticated / --cred / --cred-file into config.raw for the run."""
+    creds: list[dict] = list(config.raw.get("credentials", []) or [])
+
+    cred_file = getattr(args, "cred_file", None)
+    if cred_file:
+        import yaml
+        with cred_file.open("r", encoding="utf-8") as handle:
+            loaded = yaml.safe_load(handle) or {}
+        file_creds = loaded.get("credentials", []) if isinstance(loaded, dict) else []
+        if isinstance(file_creds, list):
+            creds.extend(c for c in file_creds if isinstance(c, dict))
+
+    from portwise.intelligence.credentials import parse_cred_arg
+    from dataclasses import asdict
+    for raw in getattr(args, "cred", []) or []:
+        creds.append(asdict(parse_cred_arg(raw)))
+
+    if creds:
+        config.raw["credentials"] = creds
+    if getattr(args, "authenticated", False):
+        config.raw["authenticated"] = True
 
 
 def _print_scan_summary(run, state: dict) -> None:

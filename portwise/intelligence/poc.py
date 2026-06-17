@@ -33,6 +33,7 @@ class PocItem:
     note: str = ""
     captured_output: str = ""
     artifact_path: str = ""
+    screenshot: str = ""
 
     def slug(self) -> str:
         base = f"{self.asset}_{self.port}_{self.title}"
@@ -45,6 +46,15 @@ def _poc_from_evidence(finding: dict[str, Any]) -> str | None:
         cmd = data.get("poc_command")
         if cmd:
             return str(cmd)
+    return None
+
+
+def _screenshot_from_evidence(finding: dict[str, Any]) -> str | None:
+    for ev in finding.get("evidence", []) or []:
+        data = ev.get("data", {}) if isinstance(ev, dict) else {}
+        shot = data.get("screenshot")
+        if shot:
+            return str(shot)
     return None
 
 
@@ -87,7 +97,8 @@ def build_poc_items(run: dict[str, Any], min_severity: str = "low") -> list[PocI
         if order.get(sev, 5) > threshold:
             continue
         cmd = _poc_from_evidence(f) or _derive_poc(f)
-        if not cmd:
+        screenshot = _screenshot_from_evidence(f)
+        if not cmd and not screenshot:
             continue
         # Strip inline "# comment" tails for the executable form, keep full for display.
         items.append(PocItem(
@@ -95,8 +106,9 @@ def build_poc_items(run: dict[str, Any], min_severity: str = "low") -> list[PocI
             severity=sev,
             asset=str(f.get("asset", "")),
             port=int(f.get("port") or 0),
-            command=cmd,
+            command=cmd or "",
             note=str(f.get("description", ""))[:300],
+            screenshot=screenshot or "",
         ))
     return items
 
@@ -136,10 +148,15 @@ def write_poc_artifacts(items: list[PocItem], out_dir: Path, capture: bool = Fal
             f"Severity: {item.severity}",
             f"Target  : {item.asset}:{item.port}",
             "",
-            "Reproduction command (run this and screenshot the output):",
-            f"  {item.command}",
-            "",
         ]
+        if item.screenshot:
+            body += [f"Screenshot evidence: {item.screenshot}", ""]
+        if item.command:
+            body += [
+                "Reproduction command (run this and screenshot the output):",
+                f"  {item.command}",
+                "",
+            ]
         if item.captured_output:
             body += ["----- CAPTURED OUTPUT (evidence) -----", item.captured_output.strip(), "----- END -----", ""]
         else:
@@ -147,7 +164,10 @@ def write_poc_artifacts(items: list[PocItem], out_dir: Path, capture: bool = Fal
         path.write_text("\n".join(body), encoding="utf-8")
         item.artifact_path = str(path)
         index_lines.append(f"[{item.severity:>8}] {item.asset}:{item.port}  {item.title}")
-        index_lines.append(f"           cmd: {item.command}")
+        if item.command:
+            index_lines.append(f"           cmd: {item.command}")
+        if item.screenshot:
+            index_lines.append(f"           screenshot: {item.screenshot}")
         index_lines.append(f"           file: {path.name}")
         index_lines.append("")
     index = out_dir / "INDEX.txt"

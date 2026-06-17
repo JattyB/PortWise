@@ -234,6 +234,39 @@ def run_scan(
             progress.skip_phase("CVE enrichment", "Dry-run mode; CVE providers not queried.")
     elif progress:
         progress.skip_phase("CVE enrichment", "CVE enrichment disabled by profile.")
+
+    _run_exploit_intel_phase(
+        config=config,
+        run=run,
+        state=state,
+        dry_run=dry_run,
+        progress=progress,
+    )
+
+    _run_web_engines_phase(
+        config=config,
+        profile=profile,
+        module_config=module_config,
+        routes=routes,
+        run=run,
+        state=state,
+        dry_run=dry_run,
+        no_modules=no_modules,
+        progress=progress,
+    )
+
+    _run_screenshot_phase(
+        workspace=workspace,
+        config=config,
+        module_config=module_config,
+        routes=routes,
+        run=run,
+        state=state,
+        dry_run=dry_run,
+        no_modules=no_modules,
+        progress=progress,
+    )
+
     run.findings = dedupe_findings(run.findings)
     run.metadata["state"] = state.to_dict()
     run.metadata["module_target_counts"] = module_target_counts(routes)
@@ -242,6 +275,139 @@ def run_scan(
     if progress:
         _update_progress_counters(progress, state, run)
     return run
+
+
+def _run_exploit_intel_phase(
+    *,
+    config: PortWiseConfig,
+    run: RunResult,
+    state: RunState,
+    dry_run: bool,
+    progress: ProgressTracker | None,
+) -> None:
+    """Annotate version-matched CVE findings with public exploit availability."""
+    intel_cfg = config.raw.get("exploit_intel", {}) if isinstance(config.raw.get("exploit_intel"), dict) else {}
+    cve_findings = [f for f in run.findings if f.cve_id and str(f.confidence) in {"Likely", "Confirmed"}]
+
+    if dry_run or not cve_findings or not bool(intel_cfg.get("enabled", True)):
+        reason = "Dry-run mode" if dry_run else "No version-matched CVE findings" if not cve_findings else "Disabled by config"
+        state.skipped_phases.append(f"exploit_intel: {reason}.")
+        if progress:
+            progress.skip_phase("Exploit intel", f"{reason}.")
+        return
+
+    from portwise.intelligence.exploit_intel import annotate_findings_with_exploits
+
+    if progress:
+        progress.start_phase("Exploit intel", f"checking exploit availability for {len(cve_findings)} CVE finding(s)")
+    notes = annotate_findings_with_exploits(run.findings, {"exploit_intel": intel_cfg})
+    state.module_errors.extend(notes)
+    flagged = sum(1 for f in run.findings if f.exploit_available)
+    if progress:
+        progress.finish_phase("Exploit intel", message=f"{flagged} finding(s) have a known exploit")
+
+
+def _run_web_engines_phase(
+    *,
+    config: PortWiseConfig,
+    profile: Profile,
+    module_config: dict[str, Any],
+    routes: dict[str, list[ModuleTarget]],
+    run: RunResult,
+    state: RunState,
+    dry_run: bool,
+    no_modules: bool,
+    progress: ProgressTracker | None,
+) -> None:
+    """Orchestrate optional web engines (nuclei/ffuf) at full depth.
+
+    Runs only on real (non-dry-run) scans at `full` depth when web targets exist.
+    Absent binaries skip cleanly and record handoff notes; the pipeline is never
+    broken by a missing engine.
+    """
+    http_targets = routes.get("http_targets", [])
+    depth = str(module_config.get("validation_level", config.scanner.get("validation_level", "recon")))
+    web_cfg = config.raw.get("web_engines", {}) if isinstance(config.raw.get("web_engines"), dict) else {}
+
+    if no_modules or dry_run or depth != "full" or not http_targets or not bool(web_cfg.get("enabled", True)):
+        reason = (
+            "Disabled by --no-modules" if no_modules else
+            "Dry-run mode" if dry_run else
+            f"depth is '{depth}', not full" if depth != "full" else
+            "No web targets" if not http_targets else
+            "Disabled by config"
+        )
+        state.skipped_phases.append(f"web_engines: {reason}.")
+        if progress:
+            progress.skip_phase("Web engine orchestration", f"{reason}.")
+        return
+
+    from portwise.intelligence.web_engines import run_web_engines
+
+    if progress:
+        progress.start_phase("Web engine orchestration", f"nuclei/ffuf over {len(http_targets)} web target(s)")
+    engine_config = {**module_config, "web_engines": web_cfg}
+    web_findings, web_notes = run_web_engines(
+        http_targets,
+        engine_config,
+        existing_findings=run.findings,
+    )
+    run.findings.extend(web_findings)
+    run.evidence.extend([evidence for finding in web_findings for evidence in finding.evidence])
+    state.module_errors.extend(web_notes)
+    if progress:
+        progress.update_counters(findings_found=len(run.findings))
+        progress.finish_phase("Web engine orchestration", message=f"{len(web_findings)} engine finding(s)")
+
+
+def _run_screenshot_phase(
+    *,
+    workspace: Path,
+    config: PortWiseConfig,
+    module_config: dict[str, Any],
+    routes: dict[str, list[ModuleTarget]],
+    run: RunResult,
+    state: RunState,
+    dry_run: bool,
+    no_modules: bool,
+    progress: ProgressTracker | None,
+) -> None:
+    """Capture optional gowitness screenshots of web services at full depth."""
+    http_targets = routes.get("http_targets", [])
+    depth = str(module_config.get("validation_level", config.scanner.get("validation_level", "recon")))
+    shots_cfg = config.raw.get("screenshots", {}) if isinstance(config.raw.get("screenshots"), dict) else {}
+
+    if no_modules or dry_run or depth != "full" or not http_targets or not bool(shots_cfg.get("enabled", True)):
+        reason = (
+            "Disabled by --no-modules" if no_modules else
+            "Dry-run mode" if dry_run else
+            f"depth is '{depth}', not full" if depth != "full" else
+            "No web targets" if not http_targets else
+            "Disabled by config"
+        )
+        state.skipped_phases.append(f"screenshots: {reason}.")
+        if progress:
+            progress.skip_phase("Screenshot capture", f"{reason}.")
+        return
+
+    from portwise.intelligence.screenshots import run_screenshots
+
+    out_dir = str(workspace / "evidence" / "screenshots")
+    if progress:
+        progress.start_phase("Screenshot capture", f"gowitness over {len(http_targets)} web target(s)")
+    engine_config = {**module_config, "screenshots": shots_cfg}
+    shot_findings, shot_notes = run_screenshots(
+        http_targets,
+        engine_config,
+        out_dir=out_dir,
+        existing_findings=run.findings,
+    )
+    run.findings.extend(shot_findings)
+    run.evidence.extend([evidence for finding in shot_findings for evidence in finding.evidence])
+    state.module_errors.extend(shot_notes)
+    if progress:
+        progress.update_counters(findings_found=len(run.findings))
+        progress.finish_phase("Screenshot capture", message=f"{len(shot_findings)} screenshot(s)")
 
 
 def analyze_assets(
@@ -351,6 +517,10 @@ def _module_config(config: PortWiseConfig, profile: Profile, *, internet_facing:
     merged["context"] = profile.context
     if internet_facing is not None:
         merged["internet_facing"] = internet_facing
+    # Authenticated assessment is opt-in; pass the master switch + credentials
+    # through so modules can run credentialed checks (gated to full depth).
+    merged["authenticated"] = bool(config.raw.get("authenticated", False))
+    merged["credentials"] = config.raw.get("credentials", []) or []
     return merged
 
 

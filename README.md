@@ -1,37 +1,51 @@
 # PortWise
 
-Safe, evidence-first VAPT intelligence and reporting for authorized security
-audits.
+Penetration-testing orchestration, correlation, and evidence-backed reporting
+for authorized assessments.
 
-PortWise turns Nmap evidence into structured service intelligence, runs
-conservative read-only validation modules, applies confidence and
-false-positive logic, optionally enriches components with CVE context, and
-generates JSON, HTML, and Excel reports suitable for auditor review.
+PortWise is the brain that ties best-in-class scanners and native protocol
+checks into one prioritized report: it discovers services, runs native
+protocol-level validation, orchestrates optional external engines (nuclei, ffuf,
+gowitness, masscan, testssl), correlates and de-duplicates findings, maps
+version-matched CVEs, captures evidence/POCs, and generates JSON, HTML, and
+Excel reports suitable for client delivery.
 
 ## What It Is
 
-PortWise is a Python 3.11+ assessment assistant for authorized VAPT and
-security configuration review. It is designed to help an assessor answer:
+PortWise is a Python 3.11+ penetration-testing orchestration platform for
+authorized engagements. The operator controls:
 
-- What assets and services were discovered?
-- Which services need owner validation?
-- Which safe checks confirm a finding?
-- Which findings are only version/banner/CPE indicators?
+- **Depth** — `recon` (fast enumeration) or `full` (complete active assessment).
+- **Scope** — intrusive or credentialed actions are explicit opt-in per
+  engagement.
+
+It answers, with a visible evidence chain:
+
+- What assets and services are exposed?
+- Which findings are confirmed by an active check vs. only a version/banner
+  indicator?
+- What is the confidence and false-positive risk of each finding?
+- Which version-matched CVEs apply, and is an exploit available?
 - What changed during retest?
 
-## What It Is Not
+## Architecture
 
-PortWise is not an exploit framework, brute-force tool, RCE runner, password
-spraying tool, destructive scanner, fuzzing suite, or data dumping utility. It
-does not submit credentials, test default passwords, write to services,
-enumerate sensitive database contents, or run denial-of-service checks.
+- **Native** protocol-level checks (SSH KEX, SMB negotiate, TLS handshake, HTTP
+  fingerprint, banner grab) — dependency-free.
+- **Orchestrated** heavy/fast-moving engines (nuclei, ffuf, gowitness, testssl,
+  masscan, nmap) as **optional** integrations: detect the binary on PATH, run
+  it, parse its JSON output into PortWise `Finding` objects; if absent, skip with
+  a note and emit the equivalent command through the handoff system.
+
+PortWise is the orchestration + correlation engine; it does not reimplement
+those engines.
 
 Use PortWise only against systems where you have explicit authorization.
 
 ## Why It Exists
 
-VAPT reporting often fails when raw scan output is treated as truth. PortWise
-keeps the evidence chain visible: service fingerprint, safe validation result,
+VAPT reporting fails when raw scan output is treated as truth. PortWise keeps
+the evidence chain visible: service fingerprint, active validation result,
 confidence level, false-positive risk, recommendation, and manual-validation
 status.
 
@@ -44,8 +58,8 @@ targets.txt
   -> TCP/UDP port discovery
   -> grouped service detection by identical host/port sets
   -> service parser and module router
-  -> safe modules and optional imports/CVE enrichment
-  -> confidence/risk scoring
+  -> native modules + optional orchestrated engines + CVE enrichment
+  -> confidence/risk scoring + de-duplication
   -> JSON, HTML, Excel, retest reports
 ```
 
@@ -80,13 +94,14 @@ uv pip install -e ".[dev]"
 ```powershell
 portwise init client-audit
 cd client-audit
+portwise doctor
 portwise scan --targets targets.txt --profile full-vapt --config config.yaml --dry-run
 ```
 
-Run active Nmap phases only after scope review:
+Run active phases after scope review:
 
 ```powershell
-portwise scan --targets targets.txt --profile full-vapt --config config.yaml --execute --internet-facing
+portwise scan --targets targets.txt --profile full-vapt --config config.yaml --execute
 ```
 
 Analyze existing Nmap XML:
@@ -107,26 +122,42 @@ Retest:
 portwise retest --previous runs\old.json --current runs\latest.json --format all
 ```
 
-## Progress And Status
+## Optional Engines
 
-PortWise writes scan progress continuously to:
+PortWise orchestrates external engines when they are on PATH and uses their JSON
+output. Check what is available:
 
-```text
-runs/progress.json
+```powershell
+portwise doctor
 ```
 
-During `scan`, the CLI shows phase, grouped service-detection, module, and CVE
-status. Nmap does not always expose reliable percentage completion for every
-scan type, so PortWise reports the current phase, command, group count, module
-target count, elapsed time, and skip/failure reasons.
+| Engine | Used for | If absent |
+| --- | --- | --- |
+| nmap | discovery, port + service detection | core scanning unavailable |
+| nuclei | templated web/vuln checks (`-jsonl`) | skipped; handoff command emitted |
+| ffuf | content discovery (`-of json`) | skipped; handoff command emitted |
+| gowitness | web service screenshots | skipped; handoff command emitted |
+| testssl | deep TLS analysis | native TLS checks still run |
+| masscan | fast port sweeps | nmap used instead |
+| ssh-audit | SSH algorithm cross-check | native KEXINIT probe still runs |
+| searchsploit | exploit-availability lookup | flag omitted |
 
-Check status while a scan is running, or after it completes:
+## Depth And Scope
+
+Assessment depth is `recon` or `full`, selected by profile or
+`--validation-level`. Intrusive and credentialed actions run only at `full`
+depth or behind an explicit flag — that is engagement scope control.
+
+## Progress And Status
+
+PortWise writes scan progress continuously to `runs/progress.json`. Check status
+while a scan runs or after it completes:
 
 ```powershell
 portwise status --workspace .
 ```
 
-Disable live progress output when you want machine-readable command summaries:
+Disable live progress output for machine-readable command summaries:
 
 ```powershell
 portwise scan --targets targets.txt --profile full-vapt --config config.yaml --dry-run --no-progress
@@ -134,29 +165,10 @@ portwise scan --targets targets.txt --profile full-vapt --config config.yaml --d
 
 ## Troubleshooting And Stability
 
-Check the current or last run status:
-
-```powershell
-portwise status --workspace .
-```
-
-Raw command output is written to:
-
-```text
-logs/commands/
-```
-
-UDP scanning can be slow or noisy on some networks. To skip UDP for a run:
-
-```powershell
-portwise scan --targets targets.txt --profile full-vapt --config config.yaml --execute --skip-udp
-```
-
-If a provider, module, or report format fails, PortWise records the failed or
-skipped phase and continues where it can so a partial report can still be
-generated.
-
-Useful stability switches:
+Raw command output is written to `logs/commands/`. UDP scanning can be slow on
+some networks; skip it with `--skip-udp`. If a provider, module, or report
+format fails, PortWise records the failed/skipped phase and continues so a
+partial report can still be generated.
 
 ```powershell
 portwise scan --targets targets.txt --profile full-vapt --config config.yaml --execute --no-cve
@@ -164,37 +176,20 @@ portwise scan --targets targets.txt --profile full-vapt --config config.yaml --e
 portwise scan --targets targets.txt --profile full-vapt --config config.yaml --execute --debug
 ```
 
-Use `--debug` only when troubleshooting; normal mode prints concise
-human-readable errors instead of Python tracebacks. If Nmap reports permission
-issues for SYN scans, PortWise falls back to TCP connect scan where applicable.
+Use `--debug` only when troubleshooting; normal mode prints concise errors
+instead of tracebacks. If Nmap reports permission issues for SYN scans, PortWise
+falls back to TCP connect scan where applicable.
 
 ## Profiles
 
-- `quick-triage`: fast discovery and basic routing.
-- `internal-vapt`: internal defaults with moderate exposure severity.
-- `external-vapt`: perimeter defaults with higher exposure severity.
-- `full-vapt`: discovery, TCP/UDP scan phases, grouped service detection, safe modules, reports, and optional CVE enrichment.
-- `offline-analysis`: parse existing Nmap XML and run evidence-based modules without active HTTP/TLS probes unless requested.
-
-## Module Coverage
-
-| Module | Status | Safe behavior |
-| --- | --- | --- |
-| Exposure | Implemented | Context-aware service exposure findings |
-| HTTP | Implemented | GET/HEAD/OPTIONS, headers, cookies, safe paths; no auth, POST, or fuzzing |
-| TLS | Implemented | Native Python TLS, certificate, protocol, and HSTS checks |
-| SMB | Basic | Exposure and safe Nmap script evidence parsing |
-| SSH | Basic | Exposure and version disclosure only |
-| RDP/WinRM | Basic | Exposure and Nmap evidence only; no login attempts |
-| FTP | Basic | Cleartext exposure and anonymous login check only |
-| DNS | Conservative | Exposure, recursion, CHAOS version, configured-zone AXFR only |
-| SNMP | Conservative | `public`/`private` minimal sysDescr-style check only |
-| NTP | Conservative | Basic NTP time response only |
-| Database | Conservative | Minimal Redis/Memcached/HTTP metadata probes; no data dumping |
-| DevOps/Admin | Conservative | Landing/status fingerprinting; no forms or credentials |
-| Kubernetes/Container | Conservative | `/version`, `/healthz`, `/v2/` style metadata only |
-| Mail | Conservative | Banner, STARTTLS capability, VRFY/EXPN command support only |
-| VPN/Appliance | Fingerprint | Exposure/version indicators only |
+- `quick-triage`: fast discovery and basic routing (recon depth).
+- `internal-vapt`: internal defaults, full depth.
+- `external-vapt`: perimeter defaults, full depth.
+- `full-vapt`: discovery, TCP/UDP scan phases, grouped service detection, all
+  module checks, active web crawl, CVE mapping. One command, internal or
+  external.
+- `offline-analysis`: parse existing Nmap XML and run evidence-based modules
+  without active probes unless requested.
 
 ## CVE Enrichment
 
@@ -202,19 +197,22 @@ Optional enrichment supports NVD, CISA KEV, and FIRST EPSS with caching. Set
 `PORTWISE_NVD_API_KEY` for higher NVD limits. Provider failures, no internet,
 and rate limits are recorded as skipped notes and do not fail scans.
 
-CVE confidence is intentionally conservative:
+CVE confidence is conservative:
 
 - exact CPE match: `Likely`
 - product/version keyword match: `Possible`
-- OpenSSH, Apache, nginx, OpenSSL, PHP, Linux distro packages, and Samba:
-  backport warning and manual validation
-- no CVE is marked `Confirmed` without safe validation
+- backport-sensitive packages (OpenSSH, Apache, nginx, OpenSSL, PHP, distro
+  packages, Samba): backport warning and manual validation
+- no CVE is marked `Confirmed` without active validation
+
+Version-matched CVEs are annotated with an exploit-availability flag when an
+ExploitDB entry or nuclei template is known.
 
 ## Confidence And False Positives
 
 Evidence strength:
 
-- `5`: safe active validation
+- `5`: active validation
 - `4`: strong protocol evidence
 - `3`: exact CPE/version evidence
 - `2`: banner/header only
@@ -222,7 +220,7 @@ Evidence strength:
 
 PortWise downgrades banner-only findings, guessed services, UDP
 `open|filtered`, contextual HSTS findings, and backport-sensitive version
-matches.
+matches, and de-duplicates overlapping findings.
 
 ## Reports
 
@@ -231,56 +229,46 @@ Generated under `reports/`:
 - `PortWise_Report.json`
 - `PortWise_Report.html`
 - `PortWise_Report.xlsx`
-- `PortWise_Retest.json`
-- `PortWise_Retest.xlsx`
+- `PortWise_Report.csv`
+- `PortWise_Retest.json` / `PortWise_Retest.xlsx`
 
-The Excel workbook includes 17 sheets: executive summary, inventory, ports,
-service view, findings queues, TLS/HTTP/exposure/CVE views, module targets,
-commands, skipped checks, and retest baseline.
+The HTML report includes an executive-summary narrative, per-host grouped view,
+severity charts, evidence/POC blocks, and retest diffs.
+
+## Handoff
+
+`portwise handoff` turns findings into suggested command templates for the
+operator's own tooling (NetExec, ssh-audit, nuclei/ffuf/nikto, testssl,
+snmpwalk, dig, searchsploit). It also backs the optional-engine fallback: when
+an engine is not installed, its equivalent command is emitted here.
 
 ## Imports
 
-`analyze` supports conservative imports:
+`analyze` supports imports:
 
-- `--testssl-json-dir`: imports recognizable testssl JSON issues as manual-validation findings.
+- `--testssl-json-dir`: imports testssl JSON issues as manual-validation findings.
 - `--nessus-csv`: imports common Nessus CSV fields as non-confirmed findings.
 
-Imported issues are not treated as PortWise-confirmed unless later validated by safe modules.
+Imported issues are not treated as PortWise-confirmed unless later validated by a
+module.
 
 ## Sample Artifacts
 
-Documentation-safe examples use `192.0.2.0/24`, `198.51.100.0/24`,
-`203.0.113.0/24`, and `example.com`.
+Documentation examples use `192.0.2.0/24`, `198.51.100.0/24`, `203.0.113.0/24`,
+and `example.com`.
 
 - [sample_nmap.xml](examples/sample_nmap.xml)
 - [sample_run.json](examples/sample_run.json)
 - [sample_report.json](examples/sample_report.json)
 - [sample_targets.txt](examples/sample_targets.txt)
-- [PortWise_Report.html](examples/sample_reports/PortWise_Report.html)
-- [PortWise_Report.xlsx](examples/sample_reports/PortWise_Report.xlsx)
-
-Screenshots can be added under `docs/screenshots/` before a formal release.
-
-## Limitations
-
-- Several protocol modules are intentionally conservative metadata checks.
-- DNS AXFR requires configured zones; PortWise does not brute force subdomains.
-- SNMP checks only `public` and `private` by default and query minimal metadata.
-- Database modules do not authenticate or enumerate user data.
-- CVE enrichment depends on external provider availability and rate limits.
-- PortWise supports auditor judgment; it does not replace manual validation.
 
 ## Roadmap
 
-- Richer authenticated proof modes with explicit opt-in.
-- More importers and normalized evidence mapping.
-- Type checking, linting, and release packaging.
-- Screenshot-backed reporting examples.
-- More protocol-specific parsers for existing Nmap NSE output.
+See [ROADMAP.md](ROADMAP.md).
 
 ## Contributing
 
-Keep contributions safe-by-default. Do not add exploit payloads, brute force, destructive checks, data dumping, or state-changing validation.
+See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## License
 

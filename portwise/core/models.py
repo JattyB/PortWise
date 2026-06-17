@@ -105,6 +105,8 @@ class Finding:
     cvss_vector: str | None = None
     epss: float | None = None
     kev: bool = False
+    exploit_available: bool = False
+    exploit_refs: list[str] = field(default_factory=list)
     references: list[str] = field(default_factory=list)
     evidence: list[Evidence] = field(default_factory=list)
     tags: list[str] = field(default_factory=list)
@@ -219,6 +221,7 @@ class ModuleTarget:
     confidence: int | None = None
     routing_reason: str = ""
     scripts: dict[str, Any] = field(default_factory=dict)
+    hostname: str | None = None
 
 
 @dataclass(slots=True)

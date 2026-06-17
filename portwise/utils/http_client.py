@@ -142,6 +142,11 @@ class PoliteHttpClient:
         self._tripped: set[str] = set()
         self._request_count: dict[str, int] = {}
         self._sessions: dict[str, Any] = {}
+        # Optional name-based vhost defaults. When set, every request sends this
+        # Host header and uses this SNI server name (for name-based / fronted
+        # vhosts) while still connecting to the target IP. Per-call overrides win.
+        self.vhost: str | None = None
+        self.sni: str | None = None
 
     # ------------------------------------------------------------------
     # Public API
@@ -165,11 +170,22 @@ class PoliteHttpClient:
         path: str,
         tls: bool,
         timeout: float = 10.0,
+        host_header: str | None = None,
+        sni: str | None = None,
+        extra_headers: dict[str, str] | None = None,
+        body: str | bytes | None = None,
     ) -> PoliteResponse:
         """
         Perform a polite HTTP request.
         Raises OSError when circuit breaker trips or budget is exhausted.
+
+        ``host_header``/``sni`` override (or fall back to) the per-client vhost/SNI
+        defaults so name-based and TLS-fronted vhosts can be tested while still
+        connecting to the target IP. ``extra_headers``/``body`` support authenticated
+        checks (Basic auth, form login).
         """
+        host_header = host_header or self.vhost
+        sni = sni or self.sni
         if self.is_tripped(host):
             raise OSError(
                 f"[PortWise] Circuit breaker tripped for {host}: host appears to be "
@@ -181,8 +197,9 @@ class PoliteHttpClient:
         self._apply_delay(host)
         self._request_count[host] = self._request_count.get(host, 0) + 1
 
+        from portwise.utils.net import bracket_host
         scheme = "https" if tls else "http"
-        url = f"{scheme}://{host}:{port}{path}"
+        url = f"{scheme}://{bracket_host(host)}:{port}{path}"
         headers = {
             "User-Agent": self.config.user_agent,
             "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
@@ -198,14 +215,19 @@ class PoliteHttpClient:
             "Sec-Fetch-User": "?1",
             "Connection": "close",
         }
+        if host_header:
+            headers["Host"] = host_header
+        if extra_headers:
+            headers.update(extra_headers)
         t_start = time.monotonic()
         last_exc: Exception | None = None
 
         for attempt in range(self.config.max_retries + 1):
             try:
-                status, raw_headers, body = self._do_request(
-                    host, port, method, path, tls, headers, timeout
+                status, raw_headers, resp_body = self._do_request(
+                    host, port, method, path, tls, headers, timeout, sni=sni, body=body
                 )
+                body_out = resp_body
                 timing_ms = int((time.monotonic() - t_start) * 1000)
                 meta = {
                     "method": method.upper(),
@@ -228,10 +250,10 @@ class PoliteHttpClient:
                             f"[PortWise] Circuit breaker tripped for {host}: "
                             "host appears to be rate-limiting or blocking."
                         )
-                    return PoliteResponse(status, raw_headers, body, meta)
+                    return PoliteResponse(status, raw_headers, body_out, meta)
 
                 self._reset_errors(host)
-                return PoliteResponse(status, raw_headers, body, meta)
+                return PoliteResponse(status, raw_headers, body_out, meta)
 
             except OSError as exc:
                 if "[PortWise]" in str(exc):
@@ -313,18 +335,27 @@ class PoliteHttpClient:
         tls: bool,
         headers: dict[str, str],
         timeout: float,
+        sni: str | None = None,
+        body: str | bytes | None = None,
     ) -> tuple[int, list[tuple[str, str]], bytes]:
+        # When an explicit SNI is requested for an HTTPS target, use the stdlib
+        # path with a manually wrapped socket so we connect to the IP but present
+        # the vhost server name in the TLS handshake (name-based / fronted vhosts).
+        if tls and sni:
+            return self._do_request_sni(host, port, method, path, headers, timeout, sni, body=body)
+
         session = self._get_session(host)
 
         if session is not None:
+            from portwise.utils.net import bracket_host
             scheme = "https" if tls else "http"
-            url = f"{scheme}://{host}:{port}{path}"
+            url = f"{scheme}://{bracket_host(host)}:{port}{path}"
             resp = session.request(
-                method, url, headers=headers,
+                method, url, headers=headers, data=body,
                 timeout=timeout, verify=False, allow_redirects=False,
             )
-            body = resp.content[:1_048_576]
-            return resp.status_code, list(resp.headers.items()), body
+            content = resp.content[:1_048_576]
+            return resp.status_code, list(resp.headers.items()), content
 
         # Fallback: stdlib http.client (no external deps)
         import ssl as _ssl
@@ -337,10 +368,46 @@ class PoliteHttpClient:
             ctx.verify_mode = _ssl.CERT_NONE
             kwargs["context"] = ctx
         conn = conn_cls(host, port=port, **kwargs)
-        conn.request(method, path, headers=headers)
+        conn.request(method, path, body=body, headers=headers)
         resp_raw = conn.getresponse()
-        body = resp_raw.read(1_048_576)
-        return resp_raw.status, list(resp_raw.getheaders()), body
+        content = resp_raw.read(1_048_576)
+        return resp_raw.status, list(resp_raw.getheaders()), content
+
+    def _do_request_sni(
+        self,
+        host: str,
+        port: int,
+        method: str,
+        path: str,
+        headers: dict[str, str],
+        timeout: float,
+        sni: str,
+        body: str | bytes | None = None,
+    ) -> tuple[int, list[tuple[str, str]], bytes]:
+        """HTTPS request that connects to ``host`` (IP) but presents ``sni`` as the
+        TLS server name. Used for name-based / Cloudflare-fronted vhosts."""
+        import socket as _socket
+        import ssl as _ssl
+        from http.client import HTTPSConnection
+
+        ctx = _ssl.create_default_context()
+        ctx.check_hostname = False
+        ctx.verify_mode = _ssl.CERT_NONE
+        raw = _socket.create_connection((host, port), timeout=timeout)
+        try:
+            tls_sock = ctx.wrap_socket(raw, server_hostname=sni)
+        except Exception:
+            raw.close()
+            raise
+        conn = HTTPSConnection(host, port=port, timeout=timeout)
+        conn.sock = tls_sock  # pre-wrapped socket; http.client skips its own connect
+        try:
+            conn.request(method, path, body=body, headers=headers)
+            resp_raw = conn.getresponse()
+            body = resp_raw.read(1_048_576)
+            return resp_raw.status, list(resp_raw.getheaders()), body
+        finally:
+            conn.close()
 
 
 def client_from_config(config: dict[str, Any]) -> PoliteHttpClient:

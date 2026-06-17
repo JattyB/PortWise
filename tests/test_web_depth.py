@@ -60,7 +60,7 @@ def test_soft_404_detection_suppresses_false_hits():
     # Patch _soft_404_fingerprint to return a known pattern
     with patch("portwise.modules.http.content_discovery._soft_404_fingerprint", return_value=(200, soft_body)):
         findings = run_content_discovery(
-            "10.0.0.1", 80, False, 3.0, client, _TARGET, {}, validation_level="proof"
+            "10.0.0.1", 80, False, 3.0, client, _TARGET, {}, validation_level="full"
         )
     # .env returns 200 but body matches soft-404, so no finding emitted
     env_findings = [f for f in findings if ".env" in f.title.lower()]
@@ -72,14 +72,14 @@ def test_backup_file_discovery_reports_high():
     client = _make_client({"/db.sql": (200, {}, db_body)})
     with patch("portwise.modules.http.content_discovery._soft_404_fingerprint", return_value=(404, "")):
         findings = run_content_discovery(
-            "10.0.0.1", 80, False, 3.0, client, _TARGET, {}, validation_level="proof"
+            "10.0.0.1", 80, False, 3.0, client, _TARGET, {}, validation_level="full"
         )
     sql_findings = [f for f in findings if "db.sql" in f.title.lower() or "database dump" in f.title.lower()]
     assert sql_findings, "Should find database dump"
     assert sql_findings[0].severity.value in ("high", "critical")
 
 
-def test_content_discovery_safe_level_only_fetches_safe_paths():
+def test_content_discovery_recon_level_only_fetches_recon_paths():
     requested_paths: list[str] = []
     client = _make_client()
 
@@ -93,11 +93,11 @@ def test_content_discovery_safe_level_only_fetches_safe_paths():
 
     client.request = _capturing_request  # type: ignore[method-assign]
     with patch("portwise.modules.http.content_discovery._soft_404_fingerprint", return_value=(404, "")):
-        run_content_discovery("10.0.0.1", 80, False, 3.0, client, _TARGET, {}, validation_level="safe")
+        run_content_discovery("10.0.0.1", 80, False, 3.0, client, _TARGET, {}, validation_level="recon")
 
-    safe_only = {"/robots.txt", "/sitemap.xml", "/.well-known/security.txt"}
+    recon_only = {"/robots.txt", "/sitemap.xml", "/.well-known/security.txt"}
     for path in requested_paths:
-        assert path in safe_only or path.startswith("/portwise-nonexistent"), f"Non-safe path requested at safe level: {path}"
+        assert path in recon_only or path.startswith("/portwise-nonexistent"), f"Non-recon path requested at recon depth: {path}"
 
 
 def test_content_discovery_respects_budget():
@@ -116,7 +116,7 @@ def test_content_discovery_respects_budget():
     client.request = _counter  # type: ignore[method-assign]
     config = {"web_content_discovery": {"max_requests": 5}}
     with patch("portwise.modules.http.content_discovery._soft_404_fingerprint", return_value=(404, "")):
-        run_content_discovery("10.0.0.1", 80, False, 3.0, client, _TARGET, config, validation_level="proof")
+        run_content_discovery("10.0.0.1", 80, False, 3.0, client, _TARGET, config, validation_level="full")
     # soft-404 probe + up to max_requests
     assert call_count <= 6, f"Budget exceeded: {call_count} requests made"
 
@@ -173,7 +173,7 @@ def test_reflected_token_indicator_possible_only():
     client.request = _reflecting_request  # type: ignore[method-assign]
     findings = run_injection_indicators(
         "10.0.0.1", 80, False, 3.0, client, _TARGET,
-        homepage_body=body_with_links, validation_level="proof"
+        homepage_body=body_with_links, validation_level="full"
     )
     xss = [f for f in findings if "Reflected" in f.title or "XSS" in f.title]
     assert xss, "Reflected token should produce a finding"
@@ -196,7 +196,7 @@ def test_sql_error_signature_indicator():
     client.request = _sql_error_request  # type: ignore[method-assign]
     findings = run_injection_indicators(
         "10.0.0.1", 80, False, 3.0, client, _TARGET,
-        homepage_body=body_with_links, validation_level="proof"
+        homepage_body=body_with_links, validation_level="full"
     )
     sql = [f for f in findings if "SQL" in f.title]
     assert sql, "SQL error pattern should produce a finding"
@@ -221,18 +221,18 @@ def test_open_redirect_indicator():
     client.request = _redirect_request  # type: ignore[method-assign]
     findings = run_injection_indicators(
         "10.0.0.1", 80, False, 3.0, client, _TARGET,
-        homepage_body=body_with_links, validation_level="proof"
+        homepage_body=body_with_links, validation_level="full"
     )
     redir = [f for f in findings if "Redirect" in f.title]
     assert redir, "Open redirect indicator should be emitted"
     assert redir[0].confidence.value == "Possible"
 
 
-def test_injection_checks_disabled_at_safe_level():
+def test_injection_checks_disabled_at_recon_level():
     body_with_links = '<a href="/search?q=test">Search</a>'
     client = _make_client()
     findings = run_injection_indicators(
         "10.0.0.1", 80, False, 3.0, client, _TARGET,
-        homepage_body=body_with_links, validation_level="safe"
+        homepage_body=body_with_links, validation_level="recon"
     )
-    assert findings == [], "Injection checks must not run at safe level"
+    assert findings == [], "Injection checks must not run at recon depth"
