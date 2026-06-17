@@ -128,6 +128,15 @@ cve:
   include_keyword_only: false
   collapse_version_unknown: true
 
+# Cross-reference version-matched CVEs with public exploit availability. Local
+# lookups only (no network): searchsploit/ExploitDB and nuclei template presence.
+exploit_intel:
+  enabled: true
+  searchsploit: true
+  nuclei_templates: true
+  # Override the nuclei-templates directory (else ~/nuclei-templates or $NUCLEI_TEMPLATES).
+  nuclei_templates_dir: ""
+
 reports:
   formats:
     - json

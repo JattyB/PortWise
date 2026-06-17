@@ -105,6 +105,8 @@ class Finding:
     cvss_vector: str | None = None
     epss: float | None = None
     kev: bool = False
+    exploit_available: bool = False
+    exploit_refs: list[str] = field(default_factory=list)
     references: list[str] = field(default_factory=list)
     evidence: list[Evidence] = field(default_factory=list)
     tags: list[str] = field(default_factory=list)

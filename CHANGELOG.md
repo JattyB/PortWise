@@ -9,6 +9,14 @@ evidence-backed report. The operator controls **depth** (`recon` = fast
 enumeration, `full` = complete active assessment) and **scope** (intrusive or
 credentialed actions are explicit opt-in per engagement).
 
+### Phase 5 — vuln intel depth (exploit availability)
+- Cross-reference version-matched CVE findings (Likely/Confirmed) with public
+  exploit availability via **searchsploit/ExploitDB** (JSON) and **nuclei
+  template** presence in the local templates tree. Local-only, no network.
+- Findings gain `exploit_available` + `exploit_refs` (EDB IDs/URLs, template
+  paths) and an `exploit-available` tag; results cached per CVE.
+- New "Exploit intel" scan phase and `exploit_intel:` config section.
+
 ### Phase 4 — deepened service checks + vhost/SNI
 - **NTP**: native mode-6 (control readvar) and mode-7 monlist probes — flags
   amplification/disclosure vectors, monlist tagged CVE-2013-5211 (HIGH).

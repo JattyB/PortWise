@@ -235,6 +235,14 @@ def run_scan(
     elif progress:
         progress.skip_phase("CVE enrichment", "CVE enrichment disabled by profile.")
 
+    _run_exploit_intel_phase(
+        config=config,
+        run=run,
+        state=state,
+        dry_run=dry_run,
+        progress=progress,
+    )
+
     _run_web_engines_phase(
         config=config,
         profile=profile,
@@ -267,6 +275,36 @@ def run_scan(
     if progress:
         _update_progress_counters(progress, state, run)
     return run
+
+
+def _run_exploit_intel_phase(
+    *,
+    config: PortWiseConfig,
+    run: RunResult,
+    state: RunState,
+    dry_run: bool,
+    progress: ProgressTracker | None,
+) -> None:
+    """Annotate version-matched CVE findings with public exploit availability."""
+    intel_cfg = config.raw.get("exploit_intel", {}) if isinstance(config.raw.get("exploit_intel"), dict) else {}
+    cve_findings = [f for f in run.findings if f.cve_id and str(f.confidence) in {"Likely", "Confirmed"}]
+
+    if dry_run or not cve_findings or not bool(intel_cfg.get("enabled", True)):
+        reason = "Dry-run mode" if dry_run else "No version-matched CVE findings" if not cve_findings else "Disabled by config"
+        state.skipped_phases.append(f"exploit_intel: {reason}.")
+        if progress:
+            progress.skip_phase("Exploit intel", f"{reason}.")
+        return
+
+    from portwise.intelligence.exploit_intel import annotate_findings_with_exploits
+
+    if progress:
+        progress.start_phase("Exploit intel", f"checking exploit availability for {len(cve_findings)} CVE finding(s)")
+    notes = annotate_findings_with_exploits(run.findings, {"exploit_intel": intel_cfg})
+    state.module_errors.extend(notes)
+    flagged = sum(1 for f in run.findings if f.exploit_available)
+    if progress:
+        progress.finish_phase("Exploit intel", message=f"{flagged} finding(s) have a known exploit")
 
 
 def _run_web_engines_phase(
