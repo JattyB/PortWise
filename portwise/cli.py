@@ -55,6 +55,9 @@ def build_parser() -> argparse.ArgumentParser:
     scan_cmd.add_argument("--no-modules", action="store_true")
     scan_cmd.add_argument("--concurrency", type=int, default=None, help="Max hosts checked in parallel by modules (default 10; per-host work stays serialized).")
     scan_cmd.add_argument("--no-progress", action="store_true", help="Disable live progress output and only print the JSON command summary.")
+    scan_cmd.add_argument("--authenticated", action="store_true", help="Enable authenticated checks using supplied credentials (full depth, explicit opt-in).")
+    scan_cmd.add_argument("--cred", action="append", default=[], metavar="SERVICE:USER:PASS", help="Credential for an authenticated check, e.g. web:admin:admin, smb:CORP/svc:pw, snmp::community. Repeatable.")
+    scan_cmd.add_argument("--cred-file", type=Path, help="YAML file with a 'credentials:' list for authenticated checks.")
     scan_cmd.add_argument("--polite", action="store_true", help="4× request delays and halved budget. For sensitive targets.")
     scan_cmd.add_argument("--aggressive", action="store_true", help="Reduced delays for authorized lab/CTF use only.")
     scan_cmd.add_argument("--debug", action="store_true", help="Show traceback for unexpected errors.")
@@ -163,6 +166,7 @@ def main(argv: list[str] | None = None) -> int:
             config.scanner["udp_service_detection_on_open_filtered"] = args.udp_open_filtered
             if args.concurrency is not None:
                 config.scanner["module_concurrency"] = max(1, args.concurrency)
+            _apply_credentials(config, args)
             if args.polite:
                 config.raw["politeness_mode"] = "polite"
             elif args.aggressive:
@@ -371,6 +375,30 @@ def main(argv: list[str] | None = None) -> int:
 
     parser.print_help()
     return 1
+
+
+def _apply_credentials(config, args) -> None:
+    """Merge --authenticated / --cred / --cred-file into config.raw for the run."""
+    creds: list[dict] = list(config.raw.get("credentials", []) or [])
+
+    cred_file = getattr(args, "cred_file", None)
+    if cred_file:
+        import yaml
+        with cred_file.open("r", encoding="utf-8") as handle:
+            loaded = yaml.safe_load(handle) or {}
+        file_creds = loaded.get("credentials", []) if isinstance(loaded, dict) else []
+        if isinstance(file_creds, list):
+            creds.extend(c for c in file_creds if isinstance(c, dict))
+
+    from portwise.intelligence.credentials import parse_cred_arg
+    from dataclasses import asdict
+    for raw in getattr(args, "cred", []) or []:
+        creds.append(asdict(parse_cred_arg(raw)))
+
+    if creds:
+        config.raw["credentials"] = creds
+    if getattr(args, "authenticated", False):
+        config.raw["authenticated"] = True
 
 
 def _print_scan_summary(run, state: dict) -> None:

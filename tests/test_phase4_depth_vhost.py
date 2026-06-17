@@ -171,7 +171,7 @@ def test_http_client_sends_vhost_host_header_and_sni(monkeypatch):
     client.sni = "vhost.example.com"
     captured: dict = {}
 
-    def fake_do(host, port, method, path, tls, headers, timeout, sni=None):
+    def fake_do(host, port, method, path, tls, headers, timeout, sni=None, body=None):
         captured["headers"] = headers
         captured["sni"] = sni
         captured["connect_host"] = host

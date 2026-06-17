@@ -265,6 +265,7 @@ class HttpModule(PortWiseModule):
         findings = engine.run(service, config=config)
         for finding in findings:
             finding.module = self.name
+        findings.extend(_run_web_auth_checks(target, config, http_client, hostname))
         return ModuleResult(self.name, target, findings=findings, evidence=[e for f in findings for e in f.evidence])
 
 
@@ -574,6 +575,7 @@ class SmbSafeModule(PortWiseModule):
         elif "domain" in text or "workgroup" in text or "os:" in text:
             findings.append(_simple_finding(self.name, target, "SMB OS/Domain Disclosure", Severity.LOW, "SMB script evidence discloses OS or domain metadata.", strength=4, category=FindingCategory.INFORMATION))
 
+        findings.extend(_run_smb_auth_checks(target, config))
         return ModuleResult(self.name, target, findings=findings, evidence=[e for f in findings for e in f.evidence])
 
 
@@ -651,6 +653,12 @@ class SnmpSafeModule(PortWiseModule):
 
     def run(self, target: dict[str, Any], config: dict[str, Any]) -> ModuleResult:
         snmp_config = config.get("snmp", {}) if isinstance(config.get("snmp"), dict) else {}
+        communities = list(snmp_config.get("communities", ["public", "private"]))
+        if _auth_allowed(config):
+            from portwise.intelligence.credentials import snmp_communities_from_credentials
+            for community in snmp_communities_from_credentials(config):
+                if community not in communities:
+                    communities.insert(0, community)
         findings = [
             _simple_finding(self.name, target, "SNMP Service Exposed", Severity.MEDIUM, "SNMP service is reachable based on discovery evidence.", confidence=Confidence.INFORMATIONAL, category=FindingCategory.INFORMATION),
             _simple_finding(self.name, target, "SNMP v1/v2c Exposed", Severity.MEDIUM, "SNMP v1/v2c may disclose device metadata when community strings are accepted.", confidence=Confidence.INFORMATIONAL, category=FindingCategory.BEST_PRACTICE),
@@ -665,7 +673,7 @@ class SnmpSafeModule(PortWiseModule):
         if bool(snmp_config.get("default_community_check", config.get("snmp_default_community_check", True))):
             client = client_from_config(config)
             host = str(target["host"])
-            for community in list(snmp_config.get("communities", ["public", "private"]))[:2]:
+            for community in communities[:5]:
                 if client.is_tripped(host):
                     break
                 client.throttle(host)
@@ -691,7 +699,7 @@ class SnmpSafeModule(PortWiseModule):
         if write_enabled and depth_full:
             client = client_from_config(config)
             host = str(target["host"])
-            for community in list(snmp_config.get("communities", ["public", "private"]))[:3]:
+            for community in communities[:5]:
                 if client.is_tripped(host):
                     break
                 client.throttle(host)
@@ -1406,6 +1414,43 @@ def _safe_http_fingerprint(target: dict[str, Any], config: dict[str, Any], paths
         if status in {200, 301, 302, 401, 403}:
             return status, title, _truncate(indicator, 220), f"{scheme}://{host}:{port}{path}"
     return None
+
+
+def _auth_allowed(config: dict[str, Any]) -> bool:
+    """Authenticated checks require the explicit opt-in AND full assessment depth."""
+    from portwise.intelligence.credentials import authenticated_enabled
+    return authenticated_enabled(config) and str(config.get("validation_level", "recon")) == "full"
+
+
+def _run_web_auth_checks(target: dict[str, Any], config: dict[str, Any], client: PoliteHttpClient, hostname: str | None) -> list[Finding]:
+    if not _auth_allowed(config):
+        return []
+    from portwise.intelligence.auth_checks import run_web_auth
+    from portwise.intelligence.credentials import credentials_for
+    creds = credentials_for(config, "web", "http")
+    if not creds:
+        return []
+    host = str(target["host"])
+    port = int(target["port"])
+    tls = port in {443, 8443, 9443, 4443, 5443, 7443, 10443} or "https" in str(target.get("service", "")).lower() or "tls" in str(target.get("routing_reason", "")).lower()
+    findings = run_web_auth(client, host, port, tls, creds, timeout=float(config.get("timeout", 6)))
+    for f in findings:
+        f.module = "http"
+    return findings
+
+
+def _run_smb_auth_checks(target: dict[str, Any], config: dict[str, Any]) -> list[Finding]:
+    if not _auth_allowed(config):
+        return []
+    from portwise.intelligence.auth_checks import run_smb_auth
+    from portwise.intelligence.credentials import credentials_for
+    creds = credentials_for(config, "smb")
+    if not creds:
+        return []
+    findings, _notes = run_smb_auth(str(target["host"]), creds)
+    for f in findings:
+        f.module = "smb"
+    return findings
 
 
 def _winrm_auth_methods(client: PoliteHttpClient, host: str, port: int, tls: bool, timeout: float) -> list[str]:

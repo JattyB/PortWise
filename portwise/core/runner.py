@@ -517,6 +517,10 @@ def _module_config(config: PortWiseConfig, profile: Profile, *, internet_facing:
     merged["context"] = profile.context
     if internet_facing is not None:
         merged["internet_facing"] = internet_facing
+    # Authenticated assessment is opt-in; pass the master switch + credentials
+    # through so modules can run credentialed checks (gated to full depth).
+    merged["authenticated"] = bool(config.raw.get("authenticated", False))
+    merged["credentials"] = config.raw.get("credentials", []) or []
     return merged
 
 

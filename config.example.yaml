@@ -187,6 +187,24 @@ cache:
   enabled: true
   directory: cache
 
+# Authenticated assessment (operator opt-in, full depth only). Master switch off
+# by default. Supply credentials here or via --cred/--cred-file. Only the creds you
+# provide are used — PortWise never brute forces or guesses.
+authenticated: false
+credentials: []
+  # - service: web          # web/http: Basic auth + form login
+  #   username: admin
+  #   password: admin
+  #   login_url: /login
+  #   username_field: username
+  #   password_field: password
+  # - service: smb          # authenticated SMB via nxc/netexec (orchestrated)
+  #   username: svc_account
+  #   password: "REDACTED"
+  #   domain: CORP
+  # - service: snmp         # community used as an SNMP credential
+  #   community: "REDACTED"
+
 safety:
   no_bruteforce: true
   no_exploitation: true

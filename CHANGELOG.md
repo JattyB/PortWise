@@ -9,6 +9,17 @@ evidence-backed report. The operator controls **depth** (`recon` = fast
 enumeration, `full` = complete active assessment) and **scope** (intrusive or
 credentialed actions are explicit opt-in per engagement).
 
+### Phase 7 — authenticated assessment (operator opt-in)
+- Credentials framework (`credentials.py`): load from `credentials:` config or
+  `--cred SERVICE:USER:PASS` / `--cred-file`; master `authenticated` switch.
+  Only operator-supplied credentials are used — no brute force, no guessing.
+- Authenticated checks gated to **explicit opt-in AND full depth**:
+  - **Web**: HTTP Basic auth + form login with supplied creds.
+  - **SMB**: orchestrated netexec/nxc session check (graceful skip + handoff).
+  - **SNMP**: supplied community strings fed into read + write checks.
+- Passwords are redacted in all output. HTTP client gained `extra_headers`/`body`
+  support to enable Basic auth and form login.
+
 ### Phase 6 — reporting
 - **Executive-summary narrative** at the top of the HTML report (severity chips,
   priority drivers — exploit-available/KEV/cleartext — and a "remediate first"
