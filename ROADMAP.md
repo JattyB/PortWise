@@ -11,6 +11,8 @@ opt-in per engagement). That is standard scope control, not a limitation.
 This roadmap drives PortWise to professional-grade PT capability. Phases are
 implemented in order, one commit per phase, tests green throughout.
 
+**Status: Phases 0–7 complete.** 343 tests passing.
+
 ---
 
 ## Phase 0 — Foundation + rename
