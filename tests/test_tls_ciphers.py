@@ -142,3 +142,67 @@ def test_native_probe_handles_unsupported_family_gracefully():
 
     # Should produce zero findings; no crash, no noise
     assert findings == [], f"Expected no findings when native probe fails, got: {[f.title for f in findings]}"
+
+
+def test_native_probe_pins_tls12_and_ignores_tls13_negotiation():
+    from portwise.core.models import Service
+    from portwise.modules.tls import cipher_checks
+
+    contexts = []
+
+    class FakeSocket:
+        pass
+
+    class FakeWrappedSocket:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def cipher(self):
+            return ("TLS_AES_256_GCM_SHA384", "TLSv1.3", 256)
+
+    class FakeContext:
+        def __init__(self, protocol):
+            self.protocol = protocol
+            self.check_hostname = True
+            self.verify_mode = None
+            self.maximum_version = None
+            contexts.append(self)
+
+        def set_ciphers(self, cipher_str):
+            self.cipher_str = cipher_str
+
+        def wrap_socket(self, sock, server_hostname=None):
+            return FakeWrappedSocket()
+
+    svc = Service(host="127.0.0.1", port=9443, protocol="tcp", state="open")
+    target = {"host": "127.0.0.1", "port": 9443, "protocol": "tcp", "service": "https", "scripts": {}}
+
+    with (
+        patch("portwise.modules.tls.cipher_checks.ssl.SSLContext", FakeContext),
+        patch("portwise.modules.tls.cipher_checks.socket.create_connection", return_value=FakeSocket()),
+        patch("portwise.modules.tls.cipher_checks._raw_tls_cipher_probe", return_value=False),
+    ):
+        findings = run_cipher_checks(svc, target, {"tls": {"native_cipher_probe": True}})
+
+    assert findings == []
+    assert contexts
+    assert all(ctx.maximum_version == cipher_checks.ssl.TLSVersion.TLSv1_2 for ctx in contexts)
+
+
+def test_server_hello_cipher_parser_extracts_selected_suite():
+    from portwise.modules.tls.cipher_checks import _server_hello_cipher
+
+    body = (
+        b"\x03\x03"
+        + b"\x11" * 32
+        + b"\x00"
+        + b"\x00\x0a"
+        + b"\x00"
+    )
+    handshake = b"\x02" + len(body).to_bytes(3, "big") + body
+    record = b"\x16\x03\x03" + len(handshake).to_bytes(2, "big") + handshake
+
+    assert _server_hello_cipher(record) == 0x000A

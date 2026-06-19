@@ -130,6 +130,44 @@ def test_all_tls_findings_have_module_set():
         assert f.module == "tls", f"Finding '{f.title}' has module={f.module!r}, expected 'tls'"
 
 
+def test_tls_hostname_matching_uses_san_and_one_label_wildcards():
+    cert = {
+        "subject": ((("commonName", "fallback.example.test"),),),
+        "subjectAltName": (("DNS", "*.example.test"),),
+    }
+
+    assert TlsEngine._hostname_matches_certificate("app.example.test", cert)[0] is True
+    assert TlsEngine._hostname_matches_certificate("deep.app.example.test", cert)[0] is False
+    cn_only_cert = {"subject": ((("commonName", "fallback.example.test"),),)}
+    assert TlsEngine._hostname_matches_certificate("fallback.example.test", cn_only_cert)[0] is True
+
+
+def test_tls_certificate_findings_include_chain_failure_without_match_hostname():
+    engine = TlsEngine()
+    service = Service(
+        host="wrong.host.badssl.com",
+        hostname="wrong.host.badssl.com",
+        port=443,
+        protocol="tcp",
+        state="open",
+        service_name="https",
+    )
+    cert = {
+        "subject": ((("commonName", "*.badssl.com"),),),
+        "issuer": ((("commonName", "BadSSL Intermediate Certificate Authority"),),),
+        "subjectAltName": (("DNS", "*.badssl.com"),),
+        "notAfter": "Dec 31 23:59:59 2099 GMT",
+        "_portwise_chain_valid": False,
+        "_portwise_chain_error": "self-signed certificate in certificate chain",
+    }
+
+    findings = engine._certificate_findings(service, cert)
+    titles = [finding.title for finding in findings]
+
+    assert "Untrusted Certificate Chain" in titles
+    assert "TLS Hostname Mismatch" in titles
+
+
 def test_all_http_findings_have_module_set():
     engine = HttpEngine()
     service = _make_service(port=80)

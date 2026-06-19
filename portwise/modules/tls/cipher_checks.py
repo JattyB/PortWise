@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import socket
 import ssl
+import struct
 from typing import Any
 
 from portwise.core.models import Confidence, Evidence, Finding, FindingCategory, Severity
@@ -156,9 +157,14 @@ def _sha1_cert_finding(service: Any, target: dict[str, Any], module: str) -> Fin
     )
 
 
-# Native fallback: probe a few weak cipher families and, if ANY are accepted,
-# emit a single weak-cipher finding (no per-family granularity).
-_WEAK_FAMILY_STRINGS = ("RC4", "3DES", "AES128-SHA:AES256-SHA:DES-CBC3-SHA", "aNULL:eNULL:EXPORT")
+# Native fallback: probe clearly weak cipher families and, if ANY are accepted,
+# emit a single weak-cipher finding (no per-family granularity). AES-CBC suites
+# are left to richer NSE/template enumeration to avoid false positives on
+# compatibility-only TLS 1.2 endpoints.
+_WEAK_FAMILY_STRINGS = ("RC4:@SECLEVEL=0", "3DES:@SECLEVEL=0", "aNULL:eNULL:EXPORT:@SECLEVEL=0")
+_RAW_WEAK_CIPHERS = {
+    "TLS_RSA_WITH_3DES_EDE_CBC_SHA": 0x000A,
+}
 
 
 def _native_cipher_probe(host: str, port: int, target: dict[str, Any], module: str, timeout: float) -> list[Finding]:
@@ -168,16 +174,20 @@ def _native_cipher_probe(host: str, port: int, target: dict[str, Any], module: s
             ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
             ctx.check_hostname = False
             ctx.verify_mode = ssl.CERT_NONE
+            ctx.maximum_version = ssl.TLSVersion.TLSv1_2
             ctx.set_ciphers(cipher_str)
         except ssl.SSLError:
             continue
         try:
             with ctx.wrap_socket(socket.create_connection((host, port), timeout=timeout), server_hostname=host) as s:
                 negotiated = s.cipher()
-                if negotiated:
+                if negotiated and _is_weak(negotiated[0]):
                     accepted.append(negotiated[0])
         except (ssl.SSLError, OSError, TimeoutError):
             pass
+    for name, suite in _RAW_WEAK_CIPHERS.items():
+        if _raw_tls_cipher_probe(host, port, host, suite, timeout):
+            accepted.append(name)
     if not accepted:
         return []
     poc = _poc_ciphers(host, port)
@@ -198,6 +208,58 @@ def _native_cipher_probe(host: str, port: int, target: dict[str, Any], module: s
         category=FindingCategory.VULNERABILITY,
         tags=["tls", "weak-cipher", "native-probe"],
     )]
+
+
+def _raw_tls_cipher_probe(host: str, port: int, server_name: str, cipher_suite: int, timeout: float) -> bool:
+    try:
+        hello = _build_tls12_client_hello(server_name, [cipher_suite, 0x00FF])
+        with socket.create_connection((host, port), timeout=timeout) as sock:
+            sock.settimeout(timeout)
+            sock.sendall(hello)
+            data = sock.recv(4096)
+    except (OSError, TimeoutError):
+        return False
+    return _server_hello_cipher(data) == cipher_suite
+
+
+def _build_tls12_client_hello(server_name: str, cipher_suites: list[int]) -> bytes:
+    random = b"PWS1" + b"\x00" * 28
+    suites = b"".join(struct.pack("!H", suite) for suite in cipher_suites)
+    hostname = server_name.encode("idna")
+    sni_name = b"\x00" + struct.pack("!H", len(hostname)) + hostname
+    sni = struct.pack("!HHH", 0, len(sni_name) + 2, len(sni_name)) + sni_name
+    sig_algs = b"\x00\x0d\x00\x08\x00\x06\x04\x01\x05\x01\x02\x01"
+    extensions = sni + sig_algs
+    body = (
+        b"\x03\x03"
+        + random
+        + b"\x00"
+        + struct.pack("!H", len(suites))
+        + suites
+        + b"\x01\x00"
+        + struct.pack("!H", len(extensions))
+        + extensions
+    )
+    handshake = b"\x01" + len(body).to_bytes(3, "big") + body
+    return b"\x16\x03\x03" + struct.pack("!H", len(handshake)) + handshake
+
+
+def _server_hello_cipher(data: bytes) -> int | None:
+    if len(data) < 5 or data[0] != 22:
+        return None
+    record_len = int.from_bytes(data[3:5], "big")
+    payload = data[5:5 + record_len]
+    if len(payload) < 42 or payload[0] != 2:
+        return None
+    body_len = int.from_bytes(payload[1:4], "big")
+    body = payload[4:4 + body_len]
+    if len(body) < 35:
+        return None
+    session_len = body[34]
+    cipher_offset = 35 + session_len
+    if len(body) < cipher_offset + 2:
+        return None
+    return int.from_bytes(body[cipher_offset:cipher_offset + 2], "big")
 
 
 def run_cipher_checks(service: Any, target: dict[str, Any], config: dict[str, Any], module: str = "tls") -> list[Finding]:

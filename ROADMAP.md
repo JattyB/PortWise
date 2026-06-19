@@ -11,7 +11,34 @@ opt-in per engagement). That is standard scope control, not a limitation.
 This roadmap drives PortWise to professional-grade PT capability. Phases are
 implemented in order, one commit per phase, tests green throughout.
 
-**Status: Phases 0–7 complete.** 343 tests passing.
+**Status: Phases 0-7 complete; native rebuild Phase A complete.** 348 tests passing.
+
+---
+
+## Native rebuild Phase A - urgent live-test fixes
+
+**Goal:** Fix TLS and nmap regressions found during live validation before
+starting the broader native rebuild.
+
+- TLS cert analysis no longer depends on Python 3.12's removed
+  `ssl.match_hostname`; SAN/CN matching is native and wildcard matching is
+  limited to one left-most label.
+- Cert retrieval uses a non-verifying handshake so expired, self-signed, and
+  wrong-host certificates can be collected and assessed instead of collapsing to
+  "Certificate Not Retrieved." Trust-chain validation runs separately and emits
+  "Untrusted Certificate Chain" when the default trust store rejects the chain.
+- Native weak-cipher probing pins TLS 1.2 and filters negotiated suites before
+  recording a weak-cipher finding. A raw TLS ClientHello probe covers 3DES on
+  OpenSSL builds that no longer expose 3DES client suites.
+- Grouped nmap service detection includes `-Pn`, and nmap subprocess arguments
+  use absolute targets/workspace/generated paths.
+- Port-scan assets are merged into the run before module routing, so module
+  targets still exist when service-detection output is absent.
+
+**Validation:** badssl answer key TP=7 FP=0 FN=0, precision=1.000,
+recall=1.000, speed=0.043 checks/sec. Non-admin scanme run used `-sT` and
+grouped `-Pn`, found 22/25/80/443 with service/version data, no failed phases,
+and zero critical findings. Full suite green: 348 passed.
 
 ---
 

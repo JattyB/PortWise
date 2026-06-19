@@ -70,10 +70,10 @@ def has_admin_privileges() -> bool:
 
 class NmapRunner:
     def __init__(self, workspace: Path, timeout_seconds: int = 1800) -> None:
-        self.workspace = workspace
+        self.workspace = workspace.resolve()
         self.timeout_seconds = timeout_seconds
-        self.scans_dir = ensure_dir(workspace / "scans")
-        self.logs_dir = ensure_dir(workspace / "logs")
+        self.scans_dir = ensure_dir(self.workspace / "scans")
+        self.logs_dir = ensure_dir(self.workspace / "logs")
         self.command_logs_dir = ensure_dir(self.logs_dir / "commands")
 
     @staticmethod
@@ -92,8 +92,8 @@ class NmapRunner:
             raise ValueError(f"Unknown nmap step: {step}")
 
         replacements = {
-            "targets": str(targets_file),
-            "live_hosts": str(live_hosts_file or targets_file),
+            "targets": str(targets_file.resolve()),
+            "live_hosts": str((live_hosts_file or targets_file).resolve()),
             "open_tcp_ports": open_tcp_ports,
             "open_udp_ports": open_udp_ports,
             "scans": str(self.scans_dir),
@@ -175,6 +175,7 @@ class NmapRunner:
         base.extend([
             "-sV",
             "--version-light",
+            "-Pn",
         ])
         if protocol == "tcp":
             base.append("-sC")
@@ -188,7 +189,7 @@ class NmapRunner:
             "-p",
             ports_to_arg(group.ports),
             "-iL",
-            group.hosts_file,
+            str(Path(group.hosts_file).resolve()),
             "-oA",
             str(output_prefix),
         ])

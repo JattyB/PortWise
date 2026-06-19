@@ -151,6 +151,7 @@ def run_scan(
         xml_path = workspace / "scans" / PHASE_XML.get(step, "")
         if xml_path.exists():
             assets = parse_nmap_xml(xml_path)
+            run.assets = _merge_assets(run.assets, assets)
             _merge_phase(state, step, assets)
             if step == "discovery":
                 _write_live_hosts(live_hosts_file, state.live_hosts)

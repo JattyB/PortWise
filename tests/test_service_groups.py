@@ -46,20 +46,22 @@ def test_tcp_group_command_generation(tmp_path: Path) -> None:
 
     command = runner.build_service_detection_command("tcp", groups[0])
 
-    assert command[:4] == ["nmap", "-sV", "--version-light", "-sC"]
+    assert command[:5] == ["nmap", "-sV", "--version-light", "-Pn", "-sC"]
     assert "--script" in command
     scripts = command[command.index("--script") + 1]
     assert "ssh2-enum-algos" in scripts
     assert "smb-security-mode" in scripts and "smb2-security-mode" in scripts
     assert "ssl-enum-ciphers" in scripts
     assert "--reason" in command
+    assert "-Pn" in command
+    assert Path(command[command.index("-iL") + 1]).is_absolute()
     assert command[-6:] == [
         "-p",
         "22,80,443",
         "-iL",
         str(tmp_path / "scans" / "service_groups" / "tcp_group_001_hosts.txt"),
         "-oA",
-        str(tmp_path / "scans" / "04_tcp_services_tcp_group_001"),
+        str((tmp_path / "scans" / "04_tcp_services_tcp_group_001").resolve()),
     ]
 
 
@@ -70,17 +72,18 @@ def test_udp_group_command_generation(tmp_path: Path) -> None:
 
     command = runner.build_service_detection_command("udp", groups[0])
 
-    assert command[:4] == ["nmap", "-sU", "-sV", "--version-light"]
+    assert command[:5] == ["nmap", "-sU", "-sV", "--version-light", "-Pn"]
     assert "--script" in command
     scripts = command[command.index("--script") + 1]
     assert "snmp-info" in scripts
+    assert Path(command[command.index("-iL") + 1]).is_absolute()
     assert command[-6:] == [
         "-p",
         "53,161",
         "-iL",
         str(tmp_path / "scans" / "service_groups" / "udp_group_001_hosts.txt"),
         "-oA",
-        str(tmp_path / "scans" / "07_udp_services_udp_group_001"),
+        str((tmp_path / "scans" / "07_udp_services_udp_group_001").resolve()),
     ]
 
 
@@ -139,6 +142,28 @@ def test_dry_run_includes_grouped_tcp_commands(tmp_path: Path) -> None:
     assert state["tcp_service_detection_groups"][0]["host_count"] == 2
     assert state["tcp_service_detection_groups"][1]["ports"] == [445]
     assert any(path.endswith("tcp_group_001_hosts.txt") for path in state["generated_files"])
+    http_ports = {(target["host"], target["port"]) for target in state["module_targets"]["http_targets"]}
+    tls_ports = {(target["host"], target["port"]) for target in state["module_targets"]["tls_targets"]}
+    ssh_ports = {(target["host"], target["port"]) for target in state["module_targets"]["ssh_targets"]}
+    assert ("192.0.2.5", 80) in http_ports
+    assert ("192.0.2.6", 80) in http_ports
+    assert ("192.0.2.5", 443) in tls_ports
+    assert ("192.0.2.6", 443) in tls_ports
+    assert ("192.0.2.5", 22) in ssh_ports
+    assert ("192.0.2.6", 22) in ssh_ports
+
+
+def test_nmap_runner_resolves_workspace_and_target_paths(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.chdir(tmp_path)
+    Path("relative-workspace").mkdir()
+    Path("targets.txt").write_text("192.0.2.5\n", encoding="utf-8")
+    runner = NmapRunner(Path("relative-workspace"))
+
+    command, _ = runner.build_command("discovery", Path("targets.txt"))
+
+    assert runner.workspace.is_absolute()
+    assert Path(command[command.index("-iL") + 1]).is_absolute()
+    assert Path(command[command.index("-oA") + 1]).is_absolute()
 
 
 def _config_yaml() -> str:

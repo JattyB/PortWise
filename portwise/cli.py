@@ -147,6 +147,8 @@ def main(argv: list[str] | None = None) -> int:
             return 0
 
         if args.command == "scan":
+            args.targets = args.targets.resolve()
+            args.workspace = args.workspace.resolve()
             config = load_config(args.config)
             profile = config.get_profile(args.profile)
             if args.skip_udp:

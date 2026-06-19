@@ -1,5 +1,27 @@
 # Changelog
 
+## Unreleased
+
+### Phase A - native rebuild urgent fixes
+- TLS certificate retrieval now uses a non-verifying handshake first, decodes the
+  peer certificate locally, and separately reports expiry, self-signed
+  certificates, hostname mismatch, and untrusted certificate chains.
+- Replaced removed Python 3.12 `ssl.match_hostname` usage with native SAN/CN
+  hostname matching. DNS wildcards only match one left-most label.
+- Native weak-cipher probing now pins TLS 1.2, ignores TLS 1.3 negotiated
+  suites, avoids AES-CBC false positives, and includes a raw TLS ClientHello
+  probe for 3DES when OpenSSL 3 no longer exposes 3DES client suites.
+- Nmap service-detection groups now include `-Pn`; scan targets, workspace
+  paths, generated scan paths, and grouped host files are resolved to absolute
+  paths before subprocess execution.
+- Parsed port-scan assets are merged into the run before module routing, so
+  module targets are still built when service-detection XML is missing or a
+  service-detection group fails.
+- Validation: badssl answer-key pass TP=7 FP=0 FN=0, precision=1.000,
+  recall=1.000 at 0.043 checks/sec. Non-admin scanme run used `-sT` plus
+  grouped `-Pn`, found ports 22/25/80/443 with service data, no failed phases,
+  and zero critical findings. Full suite: 348 passed.
+
 ## v0.7.0 — orchestration platform foundation
 
 PortWise is a penetration-testing orchestration platform: the orchestration +

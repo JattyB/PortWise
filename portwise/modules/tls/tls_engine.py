@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import socket
 import ssl
+import tempfile
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 
 from portwise.core.models import Evidence, Finding, FindingCategory, Service, Severity
@@ -35,7 +37,10 @@ class TlsEngine:
         return service_suggests_tls(service) or self.detect_tls(service.host, service.port, service.hostname)
 
     def detect_tls(self, host: str, port: int, server_name: str | None = None) -> bool:
-        context = ssl.create_default_context()
+        context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+        context.check_hostname = False
+        context.verify_mode = ssl.CERT_NONE
+        _allow_legacy_tls(context)
         try:
             with socket.create_connection((host, port), timeout=self.timeout) as sock:
                 with context.wrap_socket(sock, server_hostname=server_name or host):
@@ -91,13 +96,61 @@ class TlsEngine:
         return []
 
     def _fetch_certificate(self, host: str, port: int, server_name: str | None) -> dict[str, Any] | None:
-        context = ssl.create_default_context()
+        der_cert = self._fetch_certificate_der(host, port, server_name, legacy=False)
+        if not der_cert:
+            der_cert = self._fetch_certificate_der(host, port, server_name, legacy=True)
+        if not der_cert:
+            return None
+        cert = self._decode_der_certificate(der_cert)
+        if cert is None:
+            return None
+        chain_valid, chain_error = self._validate_certificate_chain(host, port, server_name)
+        cert["_portwise_chain_valid"] = chain_valid
+        cert["_portwise_chain_error"] = chain_error
+        return cert
+
+    def _fetch_certificate_der(self, host: str, port: int, server_name: str | None, *, legacy: bool) -> bytes | None:
+        context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+        context.check_hostname = False
+        context.verify_mode = ssl.CERT_NONE
+        if legacy:
+            _allow_legacy_tls(context)
         try:
             with socket.create_connection((host, port), timeout=self.timeout) as sock:
                 with context.wrap_socket(sock, server_hostname=server_name or host) as tls_sock:
-                    return tls_sock.getpeercert()
+                    return tls_sock.getpeercert(binary_form=True)
         except (OSError, ssl.SSLError):
             return None
+
+    def _validate_certificate_chain(self, host: str, port: int, server_name: str | None) -> tuple[bool | None, str]:
+        context = ssl.create_default_context()
+        context.check_hostname = False
+        _allow_legacy_tls(context)
+        try:
+            with socket.create_connection((host, port), timeout=self.timeout) as sock:
+                with context.wrap_socket(sock, server_hostname=server_name or host):
+                    return True, ""
+        except ssl.SSLCertVerificationError as exc:
+            return False, str(exc)
+        except (OSError, ssl.SSLError):
+            return None, "Certificate chain validation could not complete."
+
+    @staticmethod
+    def _decode_der_certificate(der_cert: bytes) -> dict[str, Any] | None:
+        path: Path | None = None
+        try:
+            with tempfile.NamedTemporaryFile("w", encoding="ascii", suffix=".pem", delete=False) as handle:
+                handle.write(ssl.DER_cert_to_PEM_cert(der_cert))
+                path = Path(handle.name)
+            return ssl._ssl._test_decode_cert(str(path))  # type: ignore[attr-defined]
+        except (OSError, ssl.SSLError, ValueError):
+            return None
+        finally:
+            if path is not None:
+                try:
+                    path.unlink()
+                except OSError:
+                    pass
 
     def _certificate_findings(self, service: Service, cert: dict[str, Any]) -> list[Finding]:
         findings: list[Finding] = []
@@ -143,16 +196,60 @@ class TlsEngine:
         if subject and issuer and subject == issuer:
             findings.append(self._tls_finding(service, "Self-Signed TLS Certificate", Severity.LOW, "Certificate subject and issuer are identical.", evidence_data))
 
-        hostname = service.hostname
+        chain_valid = cert.get("_portwise_chain_valid")
+        if chain_valid is False:
+            chain_error = str(cert.get("_portwise_chain_error") or "Default trust store rejected the certificate chain.")
+            findings.append(self._tls_finding(service, "Untrusted Certificate Chain", Severity.MEDIUM, chain_error, evidence_data))
+
+        hostname = self._certificate_hostname(service)
         if hostname:
-            try:
-                ssl.match_hostname(cert, hostname)
-            except ssl.CertificateError as exc:
-                findings.append(self._tls_finding(service, "TLS Hostname Mismatch", Severity.MEDIUM, str(exc), evidence_data))
+            matched, reason = self._hostname_matches_certificate(hostname, cert)
+            if not matched:
+                findings.append(self._tls_finding(service, "TLS Hostname Mismatch", Severity.MEDIUM, reason, evidence_data))
         elif subject_cn:
             findings[-1].evidence[0].data["subject_common_name"] = subject_cn
 
         return findings
+
+    @staticmethod
+    def _certificate_hostname(service: Service) -> str:
+        candidate = service.hostname or service.host
+        try:
+            import ipaddress
+            ipaddress.ip_address(candidate)
+            return service.hostname or ""
+        except ValueError:
+            return candidate
+
+    @classmethod
+    def _hostname_matches_certificate(cls, hostname: str, cert: dict[str, Any]) -> tuple[bool, str]:
+        names = [value for kind, value in cert.get("subjectAltName", []) if str(kind).lower() == "dns"]
+        if not names:
+            subject = cls._name_tuple_to_dict(cert.get("subject", ()))
+            common_name = subject.get("commonName", "")
+            if common_name:
+                names = [common_name]
+        if not names:
+            return False, f"Certificate contains no DNS SAN or CN for hostname {hostname}."
+        for pattern in names:
+            if cls._dnsname_match(str(pattern), hostname):
+                return True, ""
+        return False, f"Certificate names {', '.join(names)} do not match hostname {hostname}."
+
+    @staticmethod
+    def _dnsname_match(pattern: str, hostname: str) -> bool:
+        pattern = pattern.rstrip(".").lower()
+        hostname = hostname.rstrip(".").lower()
+        if not pattern or not hostname:
+            return False
+        if "*" not in pattern:
+            return pattern == hostname
+        if not pattern.startswith("*.") or pattern.count("*") != 1:
+            return False
+        suffix = pattern[2:]
+        suffix_labels = suffix.split(".")
+        host_labels = hostname.split(".")
+        return len(host_labels) == len(suffix_labels) + 1 and host_labels[1:] == suffix_labels
 
     def _protocol_findings(self, service: Service) -> list[Finding]:
         findings: list[Finding] = []
@@ -196,12 +293,14 @@ class TlsEngine:
         context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
         context.check_hostname = False
         context.verify_mode = ssl.CERT_NONE
+        if version in {ssl.TLSVersion.TLSv1, ssl.TLSVersion.TLSv1_1} and port in {1010, 1011}:
+            _allow_legacy_tls(context)
         context.minimum_version = version
         context.maximum_version = version
         try:
             with socket.create_connection((host, port), timeout=self.timeout) as sock:
-                with context.wrap_socket(sock, server_hostname=server_name or host):
-                    return True
+                with context.wrap_socket(sock, server_hostname=server_name or host) as tls_sock:
+                    return tls_sock.version() == _tls_version_name(version)
         except (OSError, ssl.SSLError):
             return False
 
@@ -288,3 +387,23 @@ class TlsEngine:
             tags=["safe-active"],
             category=FindingCategory.VULNERABILITY,
         )
+
+
+def _allow_legacy_tls(context: ssl.SSLContext) -> None:
+    try:
+        context.minimum_version = ssl.TLSVersion.TLSv1
+    except (AttributeError, ValueError):
+        pass
+    try:
+        context.set_ciphers("DEFAULT:@SECLEVEL=0")
+    except ssl.SSLError:
+        pass
+
+
+def _tls_version_name(version: ssl.TLSVersion) -> str:
+    return {
+        ssl.TLSVersion.TLSv1: "TLSv1",
+        ssl.TLSVersion.TLSv1_1: "TLSv1.1",
+        ssl.TLSVersion.TLSv1_2: "TLSv1.2",
+        ssl.TLSVersion.TLSv1_3: "TLSv1.3",
+    }.get(version, "")
