@@ -1,0 +1,31 @@
+# Compact PortWise default content-fuzzing wordlist.
+# One path per line; external SecLists-style files can be configured.
+about.aspx
+default.aspx
+login.aspx
+Signup.aspx
+rssFeed.aspx
+Comments.aspx
+ReadNews.aspx
+ads/def.html
+admin/
+admin/login
+api/
+api/v1/
+api/docs
+swagger.json
+openapi.json
+robots.txt
+sitemap.xml
+.well-known/security.txt
+.git/HEAD
+.git/config
+.env
+web.config
+app.config
+backup.zip
+backup.tar.gz
+db.sql
+database.sql
+phpinfo.php
+server-status

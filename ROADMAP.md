@@ -11,7 +11,30 @@ opt-in per engagement). That is standard scope control, not a limitation.
 This roadmap drives PortWise to professional-grade PT capability. Phases are
 implemented in order, one commit per phase, tests green throughout.
 
-**Status: Phases 0-7 complete; native rebuild Phases A-D complete.** 365 tests passing.
+**Status: Phases 0-7 complete; native rebuild Phases A-E complete.** 371 tests passing.
+
+---
+
+## Native rebuild Phase E - content and directory fuzzing
+
+**Goal:** Native ffuf-equivalent content discovery with strict false-positive
+control through the shared transport.
+
+- Added an async wordlist fuzzer with bounded concurrency, per-host
+  politeness/jitter, configurable status/size/word/line/regex filters, optional
+  bounded recursion, and shared discovered-surface deduplication.
+- Shipped a compact default package wordlist and support for external wordlist
+  paths.
+- Strengthened soft-404 handling: multiple random-path baselines are compared
+  against every candidate by status, size, word count, line count, normalized
+  body digest, and body similarity; sensitive content signatures are reused.
+- New genuine hits are added to the discovered surface for later fuzzing and
+  template phases.
+- Live validation: testaspnet baseline was five random 404 responses with
+  size=1245, words=95, lines=30, digest prefix `aa29693f2673e265`. Fuzzer found
+  9 expected real paths and six random non-existent paths were suppressed:
+  TP=9 FP=0 FN=0, precision=1.000, recall=1.000 at 9.34 req/s. Full suite green:
+  371 passed.
 
 ---
 

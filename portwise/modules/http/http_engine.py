@@ -5,6 +5,7 @@ import re
 from portwise.core.models import Evidence, Finding, FindingCategory, Service, Severity
 from portwise.modules.http.cms_fingerprint import run_cms_fingerprint
 from portwise.modules.http.content_discovery import run_content_discovery
+from portwise.modules.http.content_fuzzer import run_content_fuzzer_async
 from portwise.modules.http.archive_discovery import run_archive_url_discovery_async
 from portwise.modules.http.injection_indicators import run_injection_indicators
 from portwise.modules.http.param_discovery import paramspider_finding, run_active_parameter_discovery_async
@@ -228,6 +229,17 @@ class HttpEngine:
             param_finding = paramspider_finding(surface, target_dict)
             if param_finding:
                 findings.append(param_finding)
+
+        fuzzer_cfg = config.get("web_content_fuzzer", {}) if isinstance(config.get("web_content_fuzzer"), dict) else {}
+        fuzzer_enabled = bool(fuzzer_cfg.get("enabled", validation_level != "recon"))
+        if fuzzer_enabled:
+            findings.extend(_run_sync(run_content_fuzzer_async(
+                base_url=f"{'https' if tls else 'http'}://{service.host}:{service.port}/",
+                client=self.client,
+                target=target_dict,
+                config=config,
+                surface=surface,
+            )))
 
         param_cfg = config.get("web_param_discovery", {}) if isinstance(config.get("web_param_discovery"), dict) else {}
         params_enabled = bool(param_cfg.get("enabled", validation_level != "recon"))

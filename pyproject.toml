@@ -45,6 +45,7 @@ include = [
 portwise = [
   "data/wappalyzer/*.json",
   "data/wappalyzer/*.md",
+  "data/wordlists/*.txt",
 ]
 
 [tool.pytest.ini_options]

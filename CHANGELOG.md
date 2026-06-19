@@ -2,6 +2,27 @@
 
 ## Unreleased
 
+### Phase E - native content and directory fuzzing
+- Added a native async content fuzzer using the shared Chrome-fingerprinted
+  transport, bounded concurrency, per-host politeness, configurable response
+  filters, optional bounded recursion, and discovered-surface deduplication.
+- Shipped a compact default content-fuzzing wordlist as package data and added
+  external wordlist support for SecLists-style files.
+- False-positive control is baseline-first: the fuzzer calibrates multiple
+  random non-existent paths and compares every candidate response by status,
+  byte size, word count, line count, normalized body digest, and body similarity
+  before reporting. Existing content signatures are reused for sensitive paths.
+- New fuzzer hits are written back into the shared discovered surface for later
+  phases.
+- Validation: `testaspnet.vulnweb.com` soft-404 baseline used five random paths,
+  each returning HTTP 404 with size=1245, words=95, lines=30, digest prefix
+  `aa29693f2673e265`. Fuzzing found 9 real paths:
+  `/about.aspx`, `/default.aspx`, `/login.aspx`, `/Signup.aspx`,
+  `/rssFeed.aspx`, `/Comments.aspx`, `/ReadNews.aspx`, `/ads/def.html`, and
+  `/robots.txt`. TP=9 FP=0 FN=0, precision=1.000, recall=1.000 at 9.34 req/s.
+  Six additional random non-existent paths all matched the baseline and were not
+  reported as findings. Full suite: 371 passed.
+
 ### Phase D - native crawler and URL discovery
 - Silenced Windows `curl_cffi` selector warnings by installing
   `WindowsSelectorEventLoopPolicy` before async curl sessions are created.
