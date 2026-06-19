@@ -37,6 +37,12 @@ transport.
   timed out through both clients and reachable `testaspnet.vulnweb.com` showed
   0/5 blocks on both plain stdlib and JA3 transport. Async transport benchmark:
   17.23 req/s vs 1.76 req/s sequential stdlib. Full suite green: 354 passed.
+- B-VERIFY: one-off `tls.peet.ws/api/all` validation proves the shared transport
+  is current Chrome, not stdlib/OpenSSL: HTTP/2, Chrome 146 UA/Sec-CH-UA,
+  JA4 `t13d1516h2_8daaf6152771_d8a2da3f94cd`, Akamai HTTP/2 fingerprint
+  `1:65536;2:0;4:6291456;6:262144|15663105|0|m,a,s,p`, and Chrome header order.
+  The stdlib control is HTTP/1.1 with JA4 `t13d1813h1_85036bcba153_fb8d5ffd48c1`
+  and no HTTP/2 fingerprint.
 
 ---
 

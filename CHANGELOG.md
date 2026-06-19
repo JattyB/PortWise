@@ -36,6 +36,13 @@
   timed out through both clients from this network, so the requested block-rate
   drop was not measurable. Async transport benchmark on reachable vulnweb paths:
   17.23 req/s versus 1.76 req/s for sequential stdlib. Full suite: 354 passed.
+- B-VERIFY added a one-off non-runtime validator against `tls.peet.ws/api/all`.
+  PortWise now proves Chrome 146 impersonation with HTTP/2, Sec-CH-UA, stable
+  JA4 `t13d1516h2_8daaf6152771_d8a2da3f94cd`, Akamai HTTP/2 fingerprint
+  `1:65536;2:0;4:6291456;6:262144|15663105|0|m,a,s,p`, and Chrome header order.
+  The stdlib control stays distinct: HTTP/1.1, no Sec-CH-UA/H2 fingerprint,
+  JA3 hash `331a436afb23d4e31134c11b301bdcb5`, and JA4
+  `t13d1813h1_85036bcba153_fb8d5ffd48c1`.
 
 ### Phase A - native rebuild urgent fixes
 - TLS certificate retrieval now uses a non-verifying handshake first, decodes the

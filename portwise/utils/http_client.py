@@ -10,26 +10,26 @@ from datetime import datetime, timezone
 from typing import Any
 from urllib.parse import urlsplit
 
-_CHROME_136_UA = (
+_CHROME_146_UA = (
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
     "AppleWebKit/537.36 (KHTML, like Gecko) "
-    "Chrome/136.0.0.0 Safari/537.36"
+    "Chrome/146.0.0.0 Safari/537.36"
 )
 
 _CHROME_BROWSER_HEADERS: tuple[tuple[str, str], ...] = (
-    ("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7"),
-    ("Accept-Encoding", "gzip, deflate, br, zstd"),
-    ("Accept-Language", "en-US,en;q=0.9"),
-    ("Upgrade-Insecure-Requests", "1"),
-    ("Sec-CH-UA", '"Chromium";v="136", "Google Chrome";v="136", "Not.A/Brand";v="99"'),
+    ("Sec-CH-UA", '"Chromium";v="146", "Not-A.Brand";v="24", "Google Chrome";v="146"'),
     ("Sec-CH-UA-Mobile", "?0"),
     ("Sec-CH-UA-Platform", '"macOS"'),
-    ("Sec-Fetch-Dest", "document"),
-    ("Sec-Fetch-Mode", "navigate"),
+    ("Upgrade-Insecure-Requests", "1"),
+    ("User-Agent", _CHROME_146_UA),
+    ("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7"),
     ("Sec-Fetch-Site", "none"),
+    ("Sec-Fetch-Mode", "navigate"),
     ("Sec-Fetch-User", "?1"),
+    ("Sec-Fetch-Dest", "document"),
+    ("Accept-Encoding", "gzip, deflate, br, zstd"),
+    ("Accept-Language", "en-US,en;q=0.9"),
     ("Priority", "u=0, i"),
-    ("User-Agent", _CHROME_136_UA),
 )
 
 _RATE_LIMIT_HEADERS = {
@@ -90,7 +90,7 @@ class PolitenessConfig:
     max_body_bytes: int = 1_048_576
     verify_tls: bool = False
     playwright_fallback: bool = True
-    user_agent: str = field(default_factory=lambda: _CHROME_136_UA)
+    user_agent: str = field(default_factory=lambda: _CHROME_146_UA)
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> PolitenessConfig:
@@ -128,7 +128,7 @@ class PolitenessConfig:
             max_body_bytes=int(data.get("max_body_bytes", 1_048_576)),
             verify_tls=bool(data.get("verify_tls", False)),
             playwright_fallback=bool(data.get("playwright_fallback", True)),
-            user_agent=str(data.get("user_agent", _CHROME_136_UA)),
+            user_agent=str(data.get("user_agent", _CHROME_146_UA)),
         )
 
     def for_polite_mode(self) -> PolitenessConfig:
