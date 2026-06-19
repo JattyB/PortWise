@@ -46,6 +46,8 @@ portwise = [
   "data/wappalyzer/*.json",
   "data/wappalyzer/*.md",
   "data/wordlists/*.txt",
+  "data/secrets/*.toml",
+  "data/secrets/*.md",
 ]
 
 [tool.pytest.ini_options]

@@ -7,6 +7,7 @@ from portwise.modules.http.cms_fingerprint import run_cms_fingerprint
 from portwise.modules.http.content_discovery import run_content_discovery
 from portwise.modules.http.content_fuzzer import run_content_fuzzer_async
 from portwise.modules.http.archive_discovery import run_archive_url_discovery_async
+from portwise.modules.http.js_analysis import run_js_analysis_async
 from portwise.modules.http.injection_indicators import run_injection_indicators
 from portwise.modules.http.param_discovery import paramspider_finding, run_active_parameter_discovery_async
 from portwise.modules.http.signatures import has_password_form, match_admin_panel, match_default_install
@@ -229,6 +230,14 @@ class HttpEngine:
             param_finding = paramspider_finding(surface, target_dict)
             if param_finding:
                 findings.append(param_finding)
+
+        findings.extend(_run_sync(run_js_analysis_async(
+            client=self.client,
+            target=target_dict,
+            config=config,
+            surface=surface,
+            homepage_body=body_text,
+        )))
 
         fuzzer_cfg = config.get("web_content_fuzzer", {}) if isinstance(config.get("web_content_fuzzer"), dict) else {}
         fuzzer_enabled = bool(fuzzer_cfg.get("enabled", validation_level != "recon"))

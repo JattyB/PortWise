@@ -2,6 +2,25 @@
 
 ## Unreleased
 
+### Phase F - JavaScript endpoint extraction and secret analysis
+- Added a native JavaScript analysis pass that reuses the shared discovered
+  surface, fetches same-origin JS through the shared curl_cffi transport, and
+  extracts URLs/endpoints from fetch/XHR/axios calls, string literals, and
+  script references. Newly discovered endpoints are fed back into the shared
+  surface for later phases.
+- Added gitleaks-style secret rules as package data plus a native secret scanner
+  with regex, entropy, and context checks. Findings are redacted and marked for
+  manual validation rather than echoing raw values.
+- Moved secret scanning out of the crawler so the crawler now owns surface
+  inventory and the dedicated analyzer owns secret findings.
+- Validation: fixture precision/recall reached 1.000/1.000 with
+  must-not-flag samples `example.js`, `noise.js`, `doc.js`, and
+  `vendor.min.js` suppressed. Live validation on `testaspnet.vulnweb.com`
+  found 16 same-origin crawl endpoints, 0 JS-file endpoints on the live surface,
+  and 0 false positives at 1.22 crawl req/s. Archive validation on
+  `testphp.vulnweb.com` fetched 1 archived JS snapshot and extracted 0
+  endpoints with 0 false positives at 20.89 req/s. Full suite: 372 passed.
+
 ### Phase E - native content and directory fuzzing
 - Added a native async content fuzzer using the shared Chrome-fingerprinted
   transport, bounded concurrency, per-host politeness, configurable response

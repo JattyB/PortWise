@@ -23,6 +23,7 @@ class DiscoveredSurface:
     forms: list[dict[str, Any]] = field(default_factory=list)
     js_files: set[str] = field(default_factory=set)
     archive_urls: set[str] = field(default_factory=set)
+    bodies: dict[str, str] = field(default_factory=dict)
 
     def add_url(self, url: str, source: str, method: str = "GET", status: int | None = None, depth: int = 0) -> str:
         normalized = normalize_url(url)
@@ -59,6 +60,9 @@ class DiscoveredSurface:
         for name in inputs:
             self.add_param(form_url, name)
 
+    def add_body(self, url: str, body: str) -> None:
+        self.bodies[normalize_url(url)] = body
+
     def as_evidence(self) -> dict[str, Any]:
         return {
             "endpoints": sorted(self.endpoints)[:200],
@@ -66,6 +70,7 @@ class DiscoveredSurface:
             "forms": self.forms[:50],
             "js_files": sorted(self.js_files)[:100],
             "archive_urls": sorted(self.archive_urls)[:200],
+            "bodies": {url: body[:2000] for url, body in list(self.bodies.items())[:50]},
         }
 
 

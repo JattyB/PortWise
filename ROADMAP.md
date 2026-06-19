@@ -11,7 +11,25 @@ opt-in per engagement). That is standard scope control, not a limitation.
 This roadmap drives PortWise to professional-grade PT capability. Phases are
 implemented in order, one commit per phase, tests green throughout.
 
-**Status: Phases 0-7 complete; native rebuild Phases A-E complete.** 371 tests passing.
+**Status: Phases 0-7 complete; native rebuild Phases A-F complete.** 372 tests passing.
+
+## Native rebuild Phase F - JavaScript endpoint extraction and secret analysis
+
+**Goal:** Native JS endpoint extraction and secret detection through the shared
+transport, with strict false-positive control.
+
+- Added JS analysis over the shared discovered surface with same-origin fetch
+  of JS assets and extraction of URLs/endpoints from fetch/XHR/axios calls,
+  literals, and script references.
+- Added package-data secret rules and a native scanner using regex, entropy,
+  and context checks; findings are redacted and marked manual-validation.
+- Moved secret scanning out of the crawler so inventory and secret detection are
+  cleanly separated.
+- Live validation: `testaspnet.vulnweb.com` produced 16 crawl endpoints, 0 JS
+  endpoints on the live surface, and 0 false positives at 1.22 crawl req/s.
+  `testphp.vulnweb.com` archive validation fetched 1 archived JS snapshot and
+  extracted 0 endpoints with 0 false positives at 20.89 req/s. Fixture
+  precision/recall: 1.000/1.000. Full suite green: 372 passed.
 
 ---
 

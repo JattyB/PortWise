@@ -198,5 +198,7 @@ async def run_archive_url_discovery_async(
     for url in result.urls:
         surface.archive_urls.add(url)
         surface.add_url(url, "archive")
+        if url.lower().split("?", 1)[0].endswith(".js"):
+            surface.js_files.add(url)
     finding = archive_finding(domain, result, target, module=module)
     return [finding] if finding else []

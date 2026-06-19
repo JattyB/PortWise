@@ -17,17 +17,6 @@ _JS_URL_RE = re.compile(r'["\'](/[^"\']*?\.js(?:\?[^"\']*)?)["\']', re.IGNORECAS
 _ENDPOINT_RE = re.compile(r'["\'`](/(?:api|v\d|rest|graphql|admin|internal|auth|oauth|user|users|account)[^"\'`\s]*)["\'`]', re.IGNORECASE)
 _FETCH_RE = re.compile(r'(?:fetch|axios\.(?:get|post|put|delete)|\.open)\s*\(\s*["\'`]([^"\'`]+)["\'`]', re.IGNORECASE)
 
-_SECRET_PATTERNS: list[tuple[str, re.Pattern[str]]] = [
-    ("AWS Access Key ID", re.compile(r"\bAKIA[0-9A-Z]{16}\b")),
-    ("Google API Key", re.compile(r"\bAIza[0-9A-Za-z\-_]{35}\b")),
-    ("Slack Token", re.compile(r"\bxox[baprs]-[0-9A-Za-z-]{10,48}\b")),
-    ("GitHub Token", re.compile(r"\bgh[pousr]_[0-9A-Za-z]{36,}\b")),
-    ("Stripe Live Key", re.compile(r"\bsk_live_[0-9a-zA-Z]{24,}\b")),
-    ("Private Key Block", re.compile(r"-----BEGIN (?:RSA |EC |OPENSSH |DSA )?PRIVATE KEY-----")),
-    ("JWT", re.compile(r"\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\b")),
-    ("Generic API Key Assignment", re.compile(r"""(?i)\b(?:api[_-]?key|secret|access[_-]?token|client[_-]?secret)\b["'\s]*[:=]["'\s]*([0-9a-zA-Z\-_]{16,})""")),
-]
-
 
 @dataclass(slots=True)
 class CrawledPage:
@@ -44,7 +33,6 @@ class CrawlResult:
     endpoints: set[str] = field(default_factory=set)
     js_files: set[str] = field(default_factory=set)
     forms: list[dict[str, Any]] = field(default_factory=list)
-    secrets: list[tuple[str, str, str]] = field(default_factory=list)
     skipped_off_origin_redirects: list[str] = field(default_factory=list)
     elapsed_s: float = 0.0
     requests: int = 0
@@ -213,10 +201,6 @@ class AsyncWebCrawler:
         for endpoint in _FETCH_RE.findall(body):
             if endpoint.startswith("/") and len(endpoint) < 160:
                 result.endpoints.add(normalize_url(urljoin(url, endpoint)))
-        for label, pattern in _SECRET_PATTERNS:
-            for match in pattern.finditer(body):
-                value = match.group(1) if match.groups() else match.group(0)
-                result.secrets.append((url, label, value))
 
 
 async def run_web_crawl_async(
@@ -274,6 +258,7 @@ def run_web_crawl(
 def _merge_crawl_surface(result: CrawlResult, surface: DiscoveredSurface) -> None:
     for page in result.pages:
         surface.add_url(page.url, "crawler", status=page.status, depth=page.depth)
+        surface.add_body(page.url, page.body)
     for endpoint in result.endpoints:
         surface.add_url(endpoint, "crawler")
     for js in result.js_files:
@@ -289,33 +274,6 @@ def _crawl_findings(result: CrawlResult, target: dict[str, Any], module: str) ->
     protocol = str(target.get("protocol", "tcp"))
     service = str(target.get("service", ""))
     findings: list[Finding] = []
-    secrets_seen: set[tuple[str, str]] = set()
-
-    for url, label, value in result.secrets:
-        key = (label, value)
-        if key in secrets_seen:
-            continue
-        secrets_seen.add(key)
-        findings.append(Finding(
-            title=f"Potential Secret Exposed in Web Content ({label})",
-            severity=Severity.HIGH,
-            asset=host,
-            port=port,
-            protocol=protocol,
-            service=service,
-            description=f"A {label} pattern was found in {url}: {_redact(value)}. Verify whether this is a live credential.",
-            recommendation="Rotate the credential if valid, remove it from client-delivered code, and move secrets server-side.",
-            confidence=Confidence.NEEDS_MANUAL_VALIDATION,
-            evidence_strength=3,
-            type="Secret Exposure",
-            module=module,
-            false_positive_risk="medium",
-            manual_validation=True,
-            evidence=[Evidence(f"module:{module}:web-crawl", f"{label} pattern matched in {url}.", 3,
-                               {"url": url, "match_redacted": _redact(value), "label": label})],
-            category=FindingCategory.VULNERABILITY,
-            tags=["web-crawl", "secret", "manual-required"],
-        ))
 
     if result.js_files:
         js_list = sorted(result.js_files)[:25]

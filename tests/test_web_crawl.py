@@ -27,7 +27,7 @@ def test_same_origin():
     assert not _same_origin("http://evil.com/a", "h", 80)
 
 
-def test_crawl_finds_secret_and_endpoints():
+def test_crawl_finds_js_and_endpoints():
     homepage = '<a href="/app.js"></a><a href="/about">about</a>'
     js = b'fetch("/api/v1/users"); var k="AKIAABCDEFGHIJKLMNOP"; const api_key="abcdef1234567890ABCD";'
     client = _Client({
@@ -38,12 +38,9 @@ def test_crawl_finds_secret_and_endpoints():
     findings = run_web_crawl("h", 443, True, 2.0, client, target, {}, homepage,
                              validation_level="full")
     titles = [f.title for f in findings]
-    assert any("Secret Exposed" in t for t in titles)
     assert any("JavaScript Files" in t for t in titles)
     assert any("Endpoints" in t for t in titles)
-    # secret value must be redacted, never raw
-    for f in findings:
-        assert "AKIAABCDEFGHIJKLMNOP" not in f.description
+    assert not any(t.startswith("Potential Secret Exposed") for t in titles)
 
 
 def test_crawl_disabled_at_recon_level():
