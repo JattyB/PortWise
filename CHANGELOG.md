@@ -2,6 +2,34 @@
 
 ## Unreleased
 
+### Phase D - native crawler and URL discovery
+- Silenced Windows `curl_cffi` selector warnings by installing
+  `WindowsSelectorEventLoopPolicy` before async curl sessions are created.
+- Rebuilt the web crawler around an async same-origin crawl core using the shared
+  Chrome-fingerprinted transport. The crawler now supports configurable depth,
+  page and JS budgets, bounded concurrency, robots `Disallow` handling, link,
+  form, JS-source, endpoint, and secret extraction, deduplication, and
+  off-origin redirect skips.
+- Added a shared discovered-surface model that records endpoints, forms,
+  JavaScript files, archive URLs, and parameters for later content fuzzing and
+  template phases.
+- Added native archive URL discovery from Wayback CDX (`matchType=host`),
+  Common Crawl, OTX, and urlscan.io. Archive discovery queries public archives,
+  so it works independently of whether the live target is reachable.
+- Added archive parameter extraction and bounded active parameter probing. Active
+  probing routes through the shared transport and detects meaningful reflection,
+  status changes, and response-shape changes while ignoring ASP.NET self-post
+  form-action echo.
+- Validation: `testaspnet.vulnweb.com` crawl found 16 expected endpoints and 14
+  expected parameters/form fields, TP=30 FP=0 FN=0, precision=1.000,
+  recall=1.000 at 5.65 req/s. Active probing ran 48 tests at 10.17 req/s and
+  found no additional hidden parameters on the answer key, TP=0 FP=0 FN=0.
+  Archive discovery for `testphp.vulnweb.com` found 497 historical URLs
+  independent of live-host reachability, including 250 Wayback URLs, 250 OTX
+  URLs, and 5 urlscan URLs; parameter extraction found the expected `artist`
+  parameter, TP=1 FP=0 FN=0, precision=1.000, recall=1.000 at 158.70 URL/sec.
+  Full suite: 365 passed.
+
 ### Phase C - native HTTP probe and technology fingerprinting
 - Added a native async HTTP prober that uses the shared `PoliteHttpClient`
   transport for status, title, headers, body hashing, and explicit redirect-chain

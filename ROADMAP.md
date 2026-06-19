@@ -11,7 +11,34 @@ opt-in per engagement). That is standard scope control, not a limitation.
 This roadmap drives PortWise to professional-grade PT capability. Phases are
 implemented in order, one commit per phase, tests green throughout.
 
-**Status: Phases 0-7 complete; native rebuild Phases A-C complete.** 361 tests passing.
+**Status: Phases 0-7 complete; native rebuild Phases A-D complete.** 365 tests passing.
+
+---
+
+## Native rebuild Phase D - crawler and URL discovery
+
+**Goal:** Native async crawler, archive URL discovery, and parameter discovery
+through the shared transport.
+
+- Rebuilt web crawling around an async same-origin crawler with bounded
+  concurrency, configurable depth/page/JS budgets, robots handling, dedup,
+  off-origin redirect skips, and link/form/JS-source extraction.
+- Added a shared discovered-surface object for endpoints, forms, JS files,
+  archive URLs, and parameters so later content fuzzing and template phases can
+  consume one normalized surface.
+- Added archive discovery from Wayback CDX (`matchType=host`), Common Crawl,
+  OTX, and urlscan.io without contacting the live target.
+- Added archive parameter extraction and bounded active parameter probing that
+  detects meaningful reflection, status changes, and response-shape changes.
+- Windows now installs `WindowsSelectorEventLoopPolicy` before curl_cffi async
+  sessions, removing the selector warning in the full suite.
+- Live validation: testaspnet crawl TP=30 FP=0 FN=0, precision=1.000,
+  recall=1.000 at 5.65 req/s. Active parameter probing ran 48 tests at
+  10.17 req/s and found no additional hidden parameters, TP=0 FP=0 FN=0.
+  testphp archive discovery found 497 historical URLs independent of live-host
+  reachability, including 250 Wayback URLs; archive parameter extraction found
+  expected `artist`, TP=1 FP=0 FN=0, precision=1.000, recall=1.000 at
+  158.70 URL/sec. Full suite green: 365 passed.
 
 ---
 

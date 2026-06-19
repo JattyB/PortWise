@@ -5,12 +5,15 @@ import re
 from portwise.core.models import Evidence, Finding, FindingCategory, Service, Severity
 from portwise.modules.http.cms_fingerprint import run_cms_fingerprint
 from portwise.modules.http.content_discovery import run_content_discovery
+from portwise.modules.http.archive_discovery import run_archive_url_discovery_async
 from portwise.modules.http.injection_indicators import run_injection_indicators
+from portwise.modules.http.param_discovery import paramspider_finding, run_active_parameter_discovery_async
 from portwise.modules.http.signatures import has_password_form, match_admin_panel, match_default_install
+from portwise.modules.http.surface import surface_from_config, surface_key
 from portwise.modules.http.tech_fingerprint import detect_technologies, technology_finding
 from portwise.modules.http.web_crawl import run_web_crawl
 from portwise.scanners.nse import nse_http_methods
-from portwise.utils.http_client import PoliteHttpClient, PoliteResponse
+from portwise.utils.http_client import PoliteHttpClient, PoliteResponse, _run_sync
 
 _BROWSER_UA = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -180,6 +183,8 @@ class HttpEngine:
             "protocol": service.protocol,
             "service": service.service_name,
         }
+        surface = surface_from_config(config, surface_key(service.host, service.port))
+        surface.add_url(f"{'https' if tls else 'http'}://{service.host}:{service.port}/", "http-probe", status=get.status)
         cookies_dict = self._cookies_from_headers(get.getheaders())
         findings.extend(run_content_discovery(
             host=service.host, port=service.port, tls=tls,
@@ -209,6 +214,30 @@ class HttpEngine:
             homepage_body=body_text,
             validation_level=validation_level,
         ))
+        archive_cfg = config.get("web_archive_discovery", {}) if isinstance(config.get("web_archive_discovery"), dict) else {}
+        archive_enabled = bool(archive_cfg.get("enabled", validation_level != "recon"))
+        archive_domain = service.hostname or service.host
+        if archive_enabled and self._looks_domain(archive_domain):
+            findings.extend(_run_sync(run_archive_url_discovery_async(
+                archive_domain,
+                self.client,
+                target_dict,
+                config,
+                surface,
+            )))
+            param_finding = paramspider_finding(surface, target_dict)
+            if param_finding:
+                findings.append(param_finding)
+
+        param_cfg = config.get("web_param_discovery", {}) if isinstance(config.get("web_param_discovery"), dict) else {}
+        params_enabled = bool(param_cfg.get("enabled", validation_level != "recon"))
+        if params_enabled:
+            findings.extend(_run_sync(run_active_parameter_discovery_async(
+                self.client,
+                target_dict,
+                config,
+                surface,
+            )))
         return findings
 
     def _request(self, host: str, port: int, method: str, path: str, tls: bool) -> PoliteResponse:
@@ -228,6 +257,10 @@ class HttpEngine:
             if "=" in part
             for k, v in [part.split("=", 1)]
         }
+
+    @staticmethod
+    def _looks_domain(value: str) -> bool:
+        return "." in value and not all(part.isdigit() for part in value.split(".") if part)
 
     def _header_findings(self, service: Service, headers: dict[str, str], tls: bool) -> list[Finding]:
         findings: list[Finding] = []

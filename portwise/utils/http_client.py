@@ -3,12 +3,19 @@ from __future__ import annotations
 import asyncio
 import inspect
 import random
+import sys
 import threading
 import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any
 from urllib.parse import urlsplit
+
+if sys.platform == "win32":
+    try:
+        asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+    except (AttributeError, RuntimeError):
+        pass
 
 _CHROME_146_UA = (
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
