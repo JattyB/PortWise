@@ -2,6 +2,25 @@
 
 ## Unreleased
 
+### Phase C - native HTTP probe and technology fingerprinting
+- Added a native async HTTP prober that uses the shared `PoliteHttpClient`
+  transport for status, title, headers, body hashing, and explicit redirect-chain
+  capture. Redirect following is now configurable on the one shared transport so
+  probes can record chains without opening a second HTTP path.
+- Shipped the MIT-licensed ProjectDiscovery Wappalyzer fingerprint dataset as
+  package data and added a native Wappalyzer-compatible detector for headers,
+  cookies, meta tags, HTML/text patterns, script URLs, inline scripts, URL
+  patterns, versions, confidences, categories, and implied technologies.
+- HTTP module output now includes an `HTTP Technology Fingerprint` informational
+  finding with matched technologies, versions, confidence, categories, and
+  evidence sources.
+- Validation: `scanme.nmap.org` returned HTTP 200, title "Go ahead and ScanMe!",
+  and detected `Apache HTTP Server 2.4.7` plus `Ubuntu`. `testaspnet.vulnweb.com`
+  returned HTTP 200, title "acublog news", and detected `IIS 8.5` plus
+  `Microsoft ASP.NET 2.0.50727`. Answer-key pass TP=3 FP=0 FN=0,
+  precision=1.000, recall=1.000. Live probe batch speed: 14.35 req/s across
+  20 requests with zero errors.
+
 ### Phase B - native rebuild transport and anti-bot foundation
 - Replaced the legacy `requests`/stdlib HTTP client with one shared
   `curl_cffi` async transport using Chrome impersonation (`impersonate="chrome"`),

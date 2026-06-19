@@ -7,6 +7,7 @@ from portwise.modules.http.cms_fingerprint import run_cms_fingerprint
 from portwise.modules.http.content_discovery import run_content_discovery
 from portwise.modules.http.injection_indicators import run_injection_indicators
 from portwise.modules.http.signatures import has_password_form, match_admin_panel, match_default_install
+from portwise.modules.http.tech_fingerprint import detect_technologies, technology_finding
 from portwise.modules.http.web_crawl import run_web_crawl
 from portwise.scanners.nse import nse_http_methods
 from portwise.utils.http_client import PoliteHttpClient, PoliteResponse
@@ -161,6 +162,17 @@ class HttpEngine:
                 category=FindingCategory.INFORMATION,
             ))
 
+        technologies = detect_technologies(
+            url=f"{'https' if tls else 'http'}://{service.host}:{service.port}/",
+            headers=get.getheaders(),
+            cookies=self._cookies_from_headers(get.getheaders()),
+            body=body_text,
+            min_confidence=50,
+        )
+        tech = technology_finding(service, technologies)
+        if tech:
+            findings.append(tech)
+
         validation_level = str(config.get("validation_level", "recon"))
         target_dict: dict = {
             "host": service.host,
@@ -168,13 +180,7 @@ class HttpEngine:
             "protocol": service.protocol,
             "service": service.service_name,
         }
-        cookies_dict = {
-            k.strip(): v.strip()
-            for hdr_val in (v for k, v in get.getheaders() if k.lower() == "set-cookie")
-            for part in hdr_val.split(";")
-            if "=" in part
-            for k, v in [part.split("=", 1)]
-        }
+        cookies_dict = self._cookies_from_headers(get.getheaders())
         findings.extend(run_content_discovery(
             host=service.host, port=service.port, tls=tls,
             timeout=self.timeout, client=self.client,
@@ -212,6 +218,16 @@ class HttpEngine:
     def _extract_title_from_body(body: str) -> str:
         match = re.search(r"<title[^>]*>(.*?)</title>", body, re.IGNORECASE | re.DOTALL)
         return re.sub(r"\s+", " ", match.group(1)).strip() if match else ""
+
+    @staticmethod
+    def _cookies_from_headers(raw_headers: list[tuple[str, str]]) -> dict[str, str]:
+        return {
+            k.strip(): v.strip()
+            for hdr_val in (v for k, v in raw_headers if k.lower() == "set-cookie")
+            for part in hdr_val.split(";")
+            if "=" in part
+            for k, v in [part.split("=", 1)]
+        }
 
     def _header_findings(self, service: Service, headers: dict[str, str], tls: bool) -> list[Finding]:
         findings: list[Finding] = []

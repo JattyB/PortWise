@@ -41,6 +41,12 @@ include = [
   "portwise*",
 ]
 
+[tool.setuptools.package-data]
+portwise = [
+  "data/wappalyzer/*.json",
+  "data/wappalyzer/*.md",
+]
+
 [tool.pytest.ini_options]
 testpaths = [
   "tests",

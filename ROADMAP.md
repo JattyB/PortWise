@@ -11,7 +11,28 @@ opt-in per engagement). That is standard scope control, not a limitation.
 This roadmap drives PortWise to professional-grade PT capability. Phases are
 implemented in order, one commit per phase, tests green throughout.
 
-**Status: Phases 0-7 complete; native rebuild Phases A-B complete.** 354 tests passing.
+**Status: Phases 0-7 complete; native rebuild Phases A-C complete.** 361 tests passing.
+
+---
+
+## Native rebuild Phase C - HTTP probe and technology fingerprinting
+
+**Goal:** Native async HTTP probing and Wappalyzer-compatible technology
+fingerprinting through the shared transport.
+
+- Added `AsyncHttpProber` for status/title/header/body metadata and explicit
+  redirect-chain capture through `PoliteHttpClient`.
+- Redirect following is configurable in the shared curl_cffi transport, preserving
+  the one-transport rule while allowing probe-level redirect evidence.
+- Shipped ProjectDiscovery's MIT Wappalyzer fingerprint dataset as pip package
+  data and added native detection for headers, cookies, meta tags, body patterns,
+  script URLs, versions, categories, and implied technologies.
+- HTTP module findings now include a technology inventory finding with matched
+  names, versions, confidence, categories, and evidence sources.
+- Live validation: scanme HTTP 200 detected `Apache HTTP Server 2.4.7`; testaspnet
+  HTTP 200 detected `IIS 8.5` and `Microsoft ASP.NET 2.0.50727`. TP=3 FP=0 FN=0,
+  precision=1.000, recall=1.000. Batch benchmark: 14.35 req/s over 20 live
+  requests with zero errors. Full suite green: 361 passed.
 
 ---
 

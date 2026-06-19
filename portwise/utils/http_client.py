@@ -270,6 +270,7 @@ class CurlCffiTransport:
         resolve_host: str | None = None,
         host_key: str | None = None,
         allow_playwright: bool = True,
+        allow_redirects: bool = True,
     ) -> TransportResult:
         semaphore = self._semaphore or asyncio.Semaphore(self.config.max_concurrency)
         self._semaphore = semaphore
@@ -288,7 +289,7 @@ class CurlCffiTransport:
                     headers=request_headers or None,
                     data=body,
                     timeout=timeout,
-                    allow_redirects=True,
+                    allow_redirects=allow_redirects,
                     max_redirects=self.config.max_redirects,
                     impersonate=profile,
                     default_headers=True,
@@ -500,6 +501,7 @@ class PoliteHttpClient:
         sni: str | None = None,
         extra_headers: dict[str, str] | None = None,
         body: str | bytes | None = None,
+        allow_redirects: bool = True,
     ) -> PoliteResponse:
         return _run_sync(self.request_async(
             host,
@@ -512,6 +514,7 @@ class PoliteHttpClient:
             sni=sni,
             extra_headers=extra_headers,
             body=body,
+            allow_redirects=allow_redirects,
         ))
 
     async def request_async(
@@ -526,6 +529,7 @@ class PoliteHttpClient:
         sni: str | None = None,
         extra_headers: dict[str, str] | None = None,
         body: str | bytes | None = None,
+        allow_redirects: bool = True,
     ) -> PoliteResponse:
         host_header = host_header or self.vhost
         sni = sni or self.sni
@@ -561,6 +565,7 @@ class PoliteHttpClient:
                     connect_host=host if resolve_host else None,
                     resolve_host=resolve_host,
                     host_key=host,
+                    allow_redirects=allow_redirects,
                 )
                 timing_ms = int((time.monotonic() - t_start) * 1000)
                 meta = {
@@ -604,6 +609,25 @@ class PoliteHttpClient:
         headers: dict[str, str] | None = None,
         body: str | bytes | None = None,
         timeout: float = 10.0,
+        allow_redirects: bool = True,
+    ) -> PoliteResponse:
+        return _run_sync(self.request_url_async(
+            url,
+            method=method,
+            headers=headers,
+            body=body,
+            timeout=timeout,
+            allow_redirects=allow_redirects,
+        ))
+
+    async def request_url_async(
+        self,
+        url: str,
+        method: str = "GET",
+        headers: dict[str, str] | None = None,
+        body: str | bytes | None = None,
+        timeout: float = 10.0,
+        allow_redirects: bool = True,
     ) -> PoliteResponse:
         parsed = urlsplit(url)
         if parsed.scheme not in {"http", "https"} or not parsed.hostname:
@@ -612,7 +636,7 @@ class PoliteHttpClient:
         path = parsed.path or "/"
         if parsed.query:
             path += f"?{parsed.query}"
-        return self.request(
+        return await self.request_async(
             parsed.hostname,
             port,
             method,
@@ -623,6 +647,7 @@ class PoliteHttpClient:
             sni=parsed.hostname if parsed.scheme == "https" else None,
             extra_headers=headers,
             body=body,
+            allow_redirects=allow_redirects,
         )
 
     async def _execute_request(self, **kwargs: Any) -> TransportResult:
