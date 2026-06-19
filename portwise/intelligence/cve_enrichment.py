@@ -5,7 +5,6 @@ import json
 import os
 import time
 import urllib.parse
-import urllib.request
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Protocol
@@ -14,6 +13,7 @@ from portwise.core.models import Confidence, Evidence, Finding, Service, Severit
 from portwise.intelligence.constants import BACKPORT_SENSITIVE
 from portwise.intelligence.risk_scoring import assign_priority
 from portwise.intelligence.version_match import cpe_product_matches, version_in_range
+from portwise.utils.http_client import PoliteHttpClient, PolitenessConfig
 
 
 @dataclass(slots=True)
@@ -36,6 +36,13 @@ class CachedHttpProvider:
         self.cache_dir = cache_dir
         self.timeout = timeout
         self.cache_dir.mkdir(parents=True, exist_ok=True)
+        self.client = PoliteHttpClient(PolitenessConfig(
+            min_delay=0.0,
+            jitter_min=0.0,
+            jitter_max=0.0,
+            max_retries=1,
+            max_requests_per_host=100,
+        ))
 
     def fetch_json(
         self,
@@ -48,16 +55,10 @@ class CachedHttpProvider:
         if path.exists() and time.time() - path.stat().st_mtime < 86_400:
             return json.loads(path.read_text(encoding="utf-8")), None
         try:
-            try:
-                import requests  # type: ignore
-
-                response = requests.get(url, headers=headers or {}, timeout=self.timeout)
-                response.raise_for_status()
-                data = response.json()
-            except ModuleNotFoundError:
-                request = urllib.request.Request(url, headers=headers or {})
-                with urllib.request.urlopen(request, timeout=self.timeout) as resp:
-                    data = json.loads(resp.read().decode("utf-8"))
+            response = self.client.request_url(url, headers=headers or {}, timeout=self.timeout)
+            if response.status >= 400:
+                return None, f"HTTP {response.status}"
+            data = json.loads(response.read().decode("utf-8"))
             path.write_text(json.dumps(data), encoding="utf-8")
             return data, None
         except Exception as exc:

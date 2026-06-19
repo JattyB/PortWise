@@ -64,8 +64,25 @@ http_politeness:
   backoff_max_seconds: 30.0
   circuit_breaker_threshold: 3
   max_requests_per_host: 30
-  user_agent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
   respect_retry_after: true
+
+http_transport:
+  # curl_cffi impersonation profile. The generic "chrome" alias tracks the
+  # latest Chrome fingerprint shipped by curl_cffi.
+  browser_profile: chrome
+  browser_profiles: [chrome]
+  rotate_profiles: false
+  max_concurrency: 10
+  max_redirects: 5
+  max_body_bytes: 1048576
+  verify_tls: false
+  playwright_fallback: true
+  # Optional upstream proxy. Supports HTTP and SOCKS proxy URLs; use
+  # http://127.0.0.1:8080 for Burp.
+  proxy: ""
+  # proxies:
+  #   http: "http://127.0.0.1:8080"
+  #   https: "http://127.0.0.1:8080"
 
 http:
   max_redirects: 3

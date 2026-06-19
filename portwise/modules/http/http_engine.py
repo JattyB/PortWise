@@ -89,6 +89,9 @@ class HttpEngine:
             except OSError:
                 return [self._failed_check(service, f"HTTP check failed: {exc}")]
 
+        if self.client.is_access_blocked(get):
+            return [self._blocked_finding(service, get)]
+
         headers = {k.lower(): v for k, v in get.getheaders()}
         findings.extend(self._header_findings(service, headers, tls))
         findings.extend(self._cookie_findings(service, get.getheaders()))
@@ -408,4 +411,36 @@ class HttpEngine:
             module="http",
             evidence=[evidence],
             tags=["check-failed"],
+        )
+
+    @staticmethod
+    def _blocked_finding(service: Service, response: PoliteResponse) -> Finding:
+        body = response.read(512).decode("utf-8", errors="replace")
+        evidence = Evidence(
+            "http-transport",
+            f"Target returned HTTP {response.status} after browser-impersonated transport.",
+            4,
+            {
+                "status": response.status,
+                "headers": dict(response.getheaders()),
+                "body_excerpt": body[:300],
+                "impersonate": response.request_meta.get("impersonate"),
+                "used_playwright": response.request_meta.get("used_playwright", False),
+            },
+        )
+        return Finding(
+            title="WAF / Access Blocked",
+            severity=Severity.INFO,
+            asset=service.host,
+            port=service.port,
+            protocol=service.protocol,
+            service=service.service_name,
+            description="The target blocked browser-impersonated HTTP probing. Treat this as an access-control signal, not a completed HTTP assessment.",
+            recommendation="Validate from an authorized source IP or through the approved upstream proxy when deeper web testing is in scope.",
+            evidence_strength=4,
+            type="http-access-blocked",
+            module="http",
+            evidence=[evidence],
+            tags=["waf", "access-blocked"],
+            category=FindingCategory.INFORMATION,
         )

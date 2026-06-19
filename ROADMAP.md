@@ -11,7 +11,32 @@ opt-in per engagement). That is standard scope control, not a limitation.
 This roadmap drives PortWise to professional-grade PT capability. Phases are
 implemented in order, one commit per phase, tests green throughout.
 
-**Status: Phases 0-7 complete; native rebuild Phase A complete.** 348 tests passing.
+**Status: Phases 0-7 complete; native rebuild Phases A-B complete.** 354 tests passing.
+
+---
+
+## Native rebuild Phase B - transport and anti-bot foundation
+
+**Goal:** All HTTP traffic routes through one shared async browser-impersonated
+transport.
+
+- Rebuilt `portwise.utils.http_client` around `curl_cffi.requests.AsyncSession`
+  with Chrome impersonation, pooled connections, bounded concurrency, redirects,
+  cookies, proxy/Burp support, configurable browser profiles, and async
+  `request_async()` support while preserving the existing sync module API.
+- Vhost/SNI scans use libcurl host resolution so the scanned IP is used for the
+  TCP connection while the URL host, Host header, and SNI remain the DNS name.
+- Circuit breakers now back off only on explicit rate-limit evidence; generic
+  blocks, connection errors, and timeouts do not starve other modules.
+- Playwright challenge clearing is optional via `portwise[browser]`; absence is
+  non-fatal. Hard HTTP blocks emit `WAF / Access Blocked` findings.
+- CVE enrichment and registry web probes no longer open separate HTTP stacks.
+- Live validation: scanme HTTP HEAD/GET 200; badssl TP=7 FP=0 FN=0,
+  precision=1.000, recall=1.000, speed=0.053 checks/sec. Vulnweb block-rate
+  drop was not measurable from this network because `testphp.vulnweb.com`
+  timed out through both clients and reachable `testaspnet.vulnweb.com` showed
+  0/5 blocks on both plain stdlib and JA3 transport. Async transport benchmark:
+  17.23 req/s vs 1.76 req/s sequential stdlib. Full suite green: 354 passed.
 
 ---
 

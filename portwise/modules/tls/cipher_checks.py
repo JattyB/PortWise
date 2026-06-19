@@ -161,7 +161,7 @@ def _sha1_cert_finding(service: Any, target: dict[str, Any], module: str) -> Fin
 # emit a single weak-cipher finding (no per-family granularity). AES-CBC suites
 # are left to richer NSE/template enumeration to avoid false positives on
 # compatibility-only TLS 1.2 endpoints.
-_WEAK_FAMILY_STRINGS = ("RC4:@SECLEVEL=0", "3DES:@SECLEVEL=0", "aNULL:eNULL:EXPORT:@SECLEVEL=0")
+_WEAK_FAMILY_STRINGS = ("-ALL:RC4:@SECLEVEL=0", "-ALL:3DES:@SECLEVEL=0", "-ALL:aNULL:eNULL:EXPORT:@SECLEVEL=0")
 _RAW_WEAK_CIPHERS = {
     "TLS_RSA_WITH_3DES_EDE_CBC_SHA": 0x000A,
 }
@@ -181,13 +181,18 @@ def _native_cipher_probe(host: str, port: int, target: dict[str, Any], module: s
         try:
             with ctx.wrap_socket(socket.create_connection((host, port), timeout=timeout), server_hostname=host) as s:
                 negotiated = s.cipher()
-                if negotiated and _is_weak(negotiated[0]):
+                if negotiated and _is_weak(negotiated[0]) and _matches_requested_family(cipher_str, negotiated[0]):
                     accepted.append(negotiated[0])
         except (ssl.SSLError, OSError, TimeoutError):
             pass
-    for name, suite in _RAW_WEAK_CIPHERS.items():
-        if _raw_tls_cipher_probe(host, port, host, suite, timeout):
-            accepted.append(name)
+    if target.get("tls_cert_retrieved") is False:
+        for name, suite in _RAW_WEAK_CIPHERS.items():
+            if _raw_tls_cipher_probe(host, port, host, suite, timeout):
+                accepted.append(name)
+    if port == 443 or target.get("force_weak_dh_probe"):
+        weak_dh = _weak_dh_probe(host, port, host, timeout)
+        if weak_dh:
+            accepted.append(weak_dh)
     if not accepted:
         return []
     poc = _poc_ciphers(host, port)
@@ -220,6 +225,34 @@ def _raw_tls_cipher_probe(host: str, port: int, server_name: str, cipher_suite: 
     except (OSError, TimeoutError):
         return False
     return _server_hello_cipher(data) == cipher_suite
+
+
+def _weak_dh_probe(host: str, port: int, server_name: str, timeout: float) -> str | None:
+    try:
+        ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
+        ctx.maximum_version = ssl.TLSVersion.TLSv1_2
+        ctx.set_ciphers("DHE:@SECLEVEL=2")
+        with ctx.wrap_socket(socket.create_connection((host, port), timeout=timeout), server_hostname=server_name):
+            return None
+    except ssl.SSLError as exc:
+        text = str(exc).lower()
+        if "dh key too small" in text or "dh_key_too_small" in text:
+            return "DHE weak/1024-bit parameter"
+        return None
+    except (OSError, TimeoutError):
+        return None
+
+
+def _matches_requested_family(cipher_str: str, negotiated: str) -> bool:
+    requested = cipher_str.lower()
+    name = negotiated.lower()
+    if "3des" in requested:
+        return any(marker in name for marker in _3DES)
+    if "rc4" in requested:
+        return any(marker in name for marker in _RC4)
+    return _is_insecure(name)
 
 
 def _build_tls12_client_hello(server_name: str, cipher_suites: list[int]) -> bytes:

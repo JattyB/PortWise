@@ -2,9 +2,7 @@ from __future__ import annotations
 
 import ftplib
 import socket
-import ssl
 import struct
-from http.client import HTTPConnection, HTTPSConnection
 from typing import Any
 
 from portwise.core.models import Confidence, Evidence, Finding, FindingCategory, Severity
@@ -25,13 +23,6 @@ from portwise.scanners.nse import (
 from portwise.scanners.smb_native import probe_smb
 from portwise.scanners.ssh_algos import enumerate_ssh_algorithms
 from portwise.utils.http_client import PoliteHttpClient, client_from_config
-
-_BROWSER_UA = (
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-    "AppleWebKit/537.36 (KHTML, like Gecko) "
-    "Chrome/124.0.0.0 Safari/537.36"
-)
-
 
 def available_modules() -> list[PortWiseModule]:
     return [
@@ -157,27 +148,6 @@ def _tcp_send_recv(host: str, port: int, payload: bytes, timeout: float, recv_si
         if payload:
             sock.sendall(payload)
         return sock.recv(recv_size)
-
-
-def _http_request(host: str, port: int, path: str, timeout: float, tls: bool | None = None) -> tuple[int, dict[str, str], str, str]:
-    attempts = [tls] if tls is not None else [port in {443, 8443, 9443}, False]
-    last_error = ""
-    for use_tls in attempts:
-        try:
-            conn_cls = HTTPSConnection if use_tls else HTTPConnection
-            kwargs: dict[str, Any] = {"timeout": timeout}
-            if use_tls:
-                kwargs["context"] = ssl.create_default_context()
-            conn = conn_cls(host, port=port, **kwargs)
-            conn.request("GET", path, headers={"User-Agent": _BROWSER_UA})
-            response = conn.getresponse()
-            body = response.read(4096).decode("utf-8", errors="replace")
-            headers = {k.lower(): v for k, v in response.getheaders()}
-            return response.status, headers, body, "https" if use_tls else "http"
-        except Exception as exc:
-            last_error = str(exc)
-            continue
-    raise OSError(last_error)
 
 
 def _extract_title(body: str) -> str:

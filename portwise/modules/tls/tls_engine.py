@@ -71,10 +71,10 @@ class TlsEngine:
             ))
         findings.extend(self._protocol_findings(service))
         findings.extend(self._hsts_findings(service))
-        findings.extend(self._cipher_findings(service))
+        findings.extend(self._cipher_findings(service, cert_retrieved=bool(cert)))
         return findings
 
-    def _cipher_findings(self, service: Service) -> list[Finding]:
+    def _cipher_findings(self, service: Service, *, cert_retrieved: bool = True) -> list[Finding]:
         from portwise.modules.tls.cipher_checks import run_cipher_checks
         target = {
             "host": service.host,
@@ -82,6 +82,7 @@ class TlsEngine:
             "protocol": service.protocol,
             "service": service.service_name,
             "scripts": service.scripts,
+            "tls_cert_retrieved": cert_retrieved,
         }
         return run_cipher_checks(service, target, {}, module="tls")
 

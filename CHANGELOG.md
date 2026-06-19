@@ -2,6 +2,41 @@
 
 ## Unreleased
 
+### Phase B - native rebuild transport and anti-bot foundation
+- Replaced the legacy `requests`/stdlib HTTP client with one shared
+  `curl_cffi` async transport using Chrome impersonation (`impersonate="chrome"`),
+  pooled async sessions, bounded concurrency, persistent cookies, redirects,
+  optional HTTP/SOCKS proxy support, and configurable browser-profile rotation.
+- Preserved the existing `PoliteHttpClient` module interface while adding
+  `request_async()` and full-URL `request_url()` helpers. Vhost/SNI targets now
+  use libcurl `RESOLVE` mapping so the URL host, Host header, and TLS SNI stay
+  coherent while connecting to the scanned IP.
+- Circuit-breaker behavior now trips only on explicit rate-limit signals
+  (429 or 403 with retry/rate-limit indicators). Generic 403s, timeouts, and
+  connection errors no longer starve other modules.
+- Added optional Playwright challenge clearing behind `portwise[browser]`.
+  When Playwright is absent, the transport degrades cleanly and returns the
+  original blocked response.
+- HTTP homepage blocks now emit a `WAF / Access Blocked` finding instead of
+  silently reporting "HTTP Check Not Completed" or producing misleading header
+  findings.
+- Routed CVE provider downloads through the shared HTTP client and removed the
+  secondary `requests`/`urllib` fetch path. Removed the unused raw registry HTTP
+  helper.
+- Tightened native TLS weak-cipher probing after live validation: weak-family
+  probes only record negotiated suites from the requested family, raw 3DES
+  fallback runs only when normal certificate retrieval fails, and weak-DH
+  probing is scoped to standard HTTPS unless explicitly forced.
+- Dependencies: `curl_cffi` is now a default pip dependency; Playwright is an
+  optional `browser` extra.
+- Validation: `scanme.nmap.org` HTTP HEAD/GET returned 200 through the new
+  transport. badssl answer-key pass TP=7 FP=0 FN=0, precision=1.000,
+  recall=1.000 at 0.053 checks/sec. `testaspnet.vulnweb.com` completed with
+  0/5 blocks through both plain stdlib and JA3 transport; `testphp.vulnweb.com`
+  timed out through both clients from this network, so the requested block-rate
+  drop was not measurable. Async transport benchmark on reachable vulnweb paths:
+  17.23 req/s versus 1.76 req/s for sequential stdlib. Full suite: 354 passed.
+
 ### Phase A - native rebuild urgent fixes
 - TLS certificate retrieval now uses a non-verifying handshake first, decodes the
   peer certificate locally, and separately reports expiry, self-signed

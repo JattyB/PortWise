@@ -129,8 +129,8 @@ def test_insecure_cipher_family_categorized_high():
 def test_native_probe_handles_unsupported_family_gracefully():
     """Native probe must not emit per-host noise when a cipher family is not testable."""
     from portwise.core.models import Service
-    svc = Service(host="127.0.0.1", port=9443, protocol="tcp", state="open")
-    target = {"host": "127.0.0.1", "port": 9443, "protocol": "tcp", "service": "https", "scripts": {}}
+    svc = Service(host="127.0.0.1", port=443, protocol="tcp", state="open")
+    target = {"host": "127.0.0.1", "port": 443, "protocol": "tcp", "service": "https", "scripts": {}}
     config = {"tls": {"native_cipher_probe": True}}
 
     # Patch ssl.SSLContext to always raise SSLError (cipher not supported by OpenSSL)
@@ -177,8 +177,8 @@ def test_native_probe_pins_tls12_and_ignores_tls13_negotiation():
         def wrap_socket(self, sock, server_hostname=None):
             return FakeWrappedSocket()
 
-    svc = Service(host="127.0.0.1", port=9443, protocol="tcp", state="open")
-    target = {"host": "127.0.0.1", "port": 9443, "protocol": "tcp", "service": "https", "scripts": {}}
+    svc = Service(host="127.0.0.1", port=443, protocol="tcp", state="open")
+    target = {"host": "127.0.0.1", "port": 443, "protocol": "tcp", "service": "https", "scripts": {}}
 
     with (
         patch("portwise.modules.tls.cipher_checks.ssl.SSLContext", FakeContext),
@@ -190,6 +190,69 @@ def test_native_probe_pins_tls12_and_ignores_tls13_negotiation():
     assert findings == []
     assert contexts
     assert all(ctx.maximum_version == cipher_checks.ssl.TLSVersion.TLSv1_2 for ctx in contexts)
+
+
+def test_native_probe_does_not_record_aes_fallback_from_weak_family():
+    from portwise.core.models import Service
+
+    class FakeSocket:
+        pass
+
+    class FakeWrappedSocket:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def cipher(self):
+            return ("AES128-SHA", "TLSv1.2", 128)
+
+    class FakeContext:
+        def __init__(self, protocol):
+            self.maximum_version = None
+            self.check_hostname = True
+            self.verify_mode = None
+
+        def set_ciphers(self, cipher_str):
+            self.cipher_str = cipher_str
+
+        def wrap_socket(self, sock, server_hostname=None):
+            return FakeWrappedSocket()
+
+    svc = Service(host="127.0.0.1", port=9443, protocol="tcp", state="open")
+    target = {"host": "127.0.0.1", "port": 9443, "protocol": "tcp", "service": "https", "scripts": {}}
+
+    with (
+        patch("portwise.modules.tls.cipher_checks.ssl.SSLContext", FakeContext),
+        patch("portwise.modules.tls.cipher_checks.socket.create_connection", return_value=FakeSocket()),
+        patch("portwise.modules.tls.cipher_checks._raw_tls_cipher_probe", return_value=False),
+        patch("portwise.modules.tls.cipher_checks._weak_dh_probe", return_value=None),
+    ):
+        findings = run_cipher_checks(svc, target, {"tls": {"native_cipher_probe": True}})
+
+    assert findings == []
+
+
+def test_native_probe_reports_weak_dh_rejection():
+    from portwise.core.models import Service
+
+    svc = Service(host="127.0.0.1", port=443, protocol="tcp", state="open")
+    target = {"host": "127.0.0.1", "port": 443, "protocol": "tcp", "service": "https", "scripts": {}}
+
+    with (
+        patch("portwise.modules.tls.cipher_checks._raw_tls_cipher_probe", return_value=False),
+        patch("portwise.modules.tls.cipher_checks._weak_dh_probe", return_value="DHE weak/1024-bit parameter"),
+        patch("portwise.modules.tls.cipher_checks.ssl.SSLContext") as mock_ctx_cls,
+    ):
+        instance = MagicMock()
+        instance.set_ciphers.side_effect = __import__("ssl").SSLError("no ciphers available")
+        mock_ctx_cls.return_value = instance
+        findings = run_cipher_checks(svc, target, {"tls": {"native_cipher_probe": True}})
+
+    weak = [f for f in findings if f.title == "Weak TLS Ciphers In Use"]
+    assert weak
+    assert "DHE weak/1024-bit parameter" in weak[0].evidence[0].data["negotiated"]
 
 
 def test_server_hello_cipher_parser_extracts_selected_suite():

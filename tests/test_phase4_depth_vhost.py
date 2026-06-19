@@ -171,25 +171,29 @@ def test_http_client_sends_vhost_host_header_and_sni(monkeypatch):
     client.sni = "vhost.example.com"
     captured: dict = {}
 
-    def fake_do(host, port, method, path, tls, headers, timeout, sni=None, body=None):
-        captured["headers"] = headers
-        captured["sni"] = sni
-        captured["connect_host"] = host
-        return 200, [("Content-Type", "text/html")], b"ok"
+    async def fake_execute(**kwargs):
+        from portwise.utils.http_client import TransportResult
+        captured.update(kwargs)
+        return TransportResult(200, [("Content-Type", "text/html")], b"ok", kwargs["url"], "chrome")
 
-    monkeypatch.setattr(client, "_do_request", fake_do)
+    monkeypatch.setattr(client, "_execute_request", fake_execute)
     client.request("203.0.113.5", 443, "GET", "/", True)
-    assert captured["headers"]["Host"] == "vhost.example.com"
-    assert captured["sni"] == "vhost.example.com"
-    assert captured["connect_host"] == "203.0.113.5"  # still connects to the IP
+    assert captured["url"] == "https://vhost.example.com:443/"
+    assert captured["resolve_host"] == "vhost.example.com"
+    assert captured["connect_host"] == "203.0.113.5"
 
 
-def test_do_request_routes_to_sni_path(monkeypatch):
+def test_transport_builds_curl_resolve_for_sni(monkeypatch):
+    import sys
+    import types
+
+    class _Opt:
+        RESOLVE = object()
+
+    monkeypatch.setitem(sys.modules, "curl_cffi", types.SimpleNamespace(CurlOpt=_Opt))
     client = PoliteHttpClient(PolitenessConfig(min_delay=0, jitter_min=0, jitter_max=0))
-    called: dict = {}
-    monkeypatch.setattr(client, "_do_request_sni", lambda *a, **k: called.setdefault("hit", True) or (200, [], b""))
-    client._do_request("203.0.113.5", 443, "GET", "/", True, {}, 5.0, sni="x.example.com")
-    assert called.get("hit") is True
+    opts = client.transport._curl_options("https://x.example.com:443/", "203.0.113.5", "x.example.com")
+    assert list(opts.values()) == [["x.example.com:443:203.0.113.5"]]
 
 
 def test_tls_module_threads_hostname_into_sni(monkeypatch):

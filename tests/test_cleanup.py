@@ -188,6 +188,10 @@ def test_all_http_findings_have_module_set():
     with (
         patch.object(engine, "_request", side_effect=[head_mock, get_mock, options_mock]),
         patch.object(engine, "_safe_path_findings", return_value=[]),
+        patch("portwise.modules.http.http_engine.run_content_discovery", return_value=[]),
+        patch("portwise.modules.http.http_engine.run_cms_fingerprint", return_value=[]),
+        patch("portwise.modules.http.http_engine.run_injection_indicators", return_value=[]),
+        patch("portwise.modules.http.http_engine.run_web_crawl", return_value=[]),
     ):
         findings = engine.run(service)
 
