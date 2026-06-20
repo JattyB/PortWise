@@ -48,7 +48,10 @@ portwise = [
   "data/wordlists/*.txt",
   "data/nuclei/*.yaml",
   "data/nuclei/*.yml",
+  "data/nuclei/*.json",
   "data/nuclei/*.md",
+  "data/nuclei/templates/*.yaml",
+  "data/nuclei/templates/*.yml",
   "data/secrets/*.toml",
   "data/secrets/*.md",
 ]

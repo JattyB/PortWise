@@ -28,6 +28,13 @@ transport with correctness-first matcher and extractor semantics.
   mapped template metadata and classification onto normal findings.
 - Added packaged curated templates plus configurable operator template
   directories for custom coverage.
+- G-EXPAND: added a native sync/filter script and shipped a substantial
+  runnable upstream slice from ProjectDiscovery `nuclei-templates` with manifest
+  metadata, pinned source commit, and MIT license attribution. Only templates
+  supported by the native engine are shipped.
+- Added stack-aware selection so template execution is narrowed by detected
+  technologies, service metadata, and product/header terms instead of running
+  the whole corpus against every target.
 - Unsupported features are skipped and logged rather than crashing. Current skip
   list: top-level `workflow`/`workflows`/`flow`, `interactsh`, HTTP request keys
   `payloads`/`attack`/`race`/`threads`, and matcher/extractor types outside the
@@ -41,6 +48,14 @@ transport with correctness-first matcher and extractor semantics.
   remained unreachable from this network, so no reachable-path template run was
   possible there. Live throughput was 1.55 templates/sec; fixture benchmark was
   >=100 templates/sec. Full suite green: 381 passed.
+- G-EXPAND validation: sync scanned 4,043 candidate upstream templates and
+  shipped 2,815 runnable ones, skipping 1,228 unsupported templates at sync
+  time. The full runnable corpus is now 2,819 templates including the original
+  curated local set. Selected-mode live runs were FP=0: `scanme.nmap.org`
+  selected 105/2819 templates and matched 1 expected Apache finding;
+  `testaspnet.vulnweb.com` selected 14/2819 templates and matched 4 expected
+  findings (IIS, ASP.NET, IIS version, `robots.txt`). Combined TP=5 FP=0 FN=0,
+  precision=1.000, recall=1.000.
 
 ## Native rebuild Phase F - JavaScript endpoint extraction and secret analysis
 

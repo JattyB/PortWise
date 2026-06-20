@@ -185,6 +185,9 @@ class HttpEngine:
             "port": service.port,
             "protocol": service.protocol,
             "service": service.service_name,
+            "server": server,
+            "x_powered_by": powered,
+            "technologies": [tech.name for tech in technologies],
         }
         surface = surface_from_config(config, surface_key(service.host, service.port))
         surface.add_url(f"{'https' if tls else 'http'}://{service.host}:{service.port}/", "http-probe", status=get.status)

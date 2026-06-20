@@ -15,6 +15,15 @@
   matcher or extractor types outside the supported subset such as `dsl`.
 - Added a curated packaged template set for live validation and operator
   override support via configurable template directories.
+- G-EXPAND: synced a substantial upstream slice from ProjectDiscovery
+  `nuclei-templates` into package data using a native sync/filter script. The
+  shipped sync source is commit `ffa35164980a981fb28374c317caff2b94e4a607`
+  across `http/technologies`, `http/exposures`, `http/misconfiguration`, and
+  `http/exposed-panels`, with MIT license attribution and a manifest. Sync-time
+  filtering kept only templates the native engine can execute.
+- Added stack-aware template relevance selection based on detected
+  technologies, service metadata, and product/header terms, so PortWise runs
+  only relevant templates instead of the full shipped corpus on every target.
 - Fixture proof now covers matcher types `status`, `word`, `regex`, `binary`,
   and `size`, matcher `and`/`or`, negative matchers, parts `body`, `header`,
   and `all`, plus extractor types `regex`, `kval`, and `json`.
@@ -25,6 +34,14 @@
   Live throughput was 1.55 templates/sec with four templates over each reachable
   target. Fixture benchmark recorded >=100 templates/sec on the in-process fake
   harness. Full suite: 381 passed.
+- G-EXPAND validation: upstream sync scanned 4,043 candidate templates and
+  shipped 2,815 runnable synced templates, skipping 1,228 unsupported ones at
+  sync time. With the original 4 curated local templates, the full runnable
+  corpus is 2,819 templates. Selected-template live runs stayed false-positive
+  free: `scanme.nmap.org` selected 105/2819 templates and matched 1 Apache
+  technology template; `testaspnet.vulnweb.com` selected 14/2819 templates and
+  matched 4 expected findings (IIS, ASP.NET, IIS version, `robots.txt`). Live
+  selected-mode result: TP=5 FP=0 FN=0, precision=1.000, recall=1.000.
 
 ### Phase F - JavaScript endpoint extraction and secret analysis
 - Added a native JavaScript analysis pass that reuses the shared discovered

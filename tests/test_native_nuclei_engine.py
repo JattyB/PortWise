@@ -9,11 +9,13 @@ from portwise.modules.http.nuclei_engine import (
     NucleiExtractor,
     NucleiMatcher,
     NucleiRequest,
+    NucleiTemplate,
     TemplateResponse,
     _evaluate_matcher,
     _json_path_lookup,
     _parse_raw_request,
     _run_extractor,
+    select_nuclei_templates,
     run_native_nuclei_async,
 )
 from portwise.utils.http_client import PoliteResponse
@@ -162,7 +164,7 @@ http:
     result = asyncio.run(run_native_nuclei_async(
         client,  # type: ignore[arg-type]
         {"host": "example.test", "port": 80, "protocol": "tcp", "service": "http"},
-        {"web_template_engine": {"include_packaged": False, "template_dir": str(tmp_path), "enabled": True}},
+        {"web_template_engine": {"include_packaged": False, "template_dir": str(tmp_path), "enabled": True, "selection": {"enabled": False}}},
     ))
 
     assert len(result.findings) == 1
@@ -222,7 +224,7 @@ http:
 
     findings = engine.run(service, {
         "validation_level": "full",
-        "web_template_engine": {"enabled": True, "include_packaged": False, "template_dir": str(tmp_path)},
+        "web_template_engine": {"enabled": True, "include_packaged": False, "template_dir": str(tmp_path), "selection": {"enabled": False}},
         "web_archive_discovery": {"enabled": False},
         "web_content_fuzzer": {"enabled": False},
         "web_param_discovery": {"enabled": False},
@@ -259,10 +261,28 @@ http:
     result = asyncio.run(run_native_nuclei_async(
         client,  # type: ignore[arg-type]
         {"host": "example.test", "port": 80, "protocol": "tcp", "service": "http"},
-        {"web_template_engine": {"enabled": True, "include_packaged": False, "template_dir": str(tmp_path), "concurrency": 5}},
+        {"web_template_engine": {"enabled": True, "include_packaged": False, "template_dir": str(tmp_path), "concurrency": 5, "selection": {"enabled": False}}},
     ))
     elapsed = perf_counter() - started
 
     assert len(result.findings) == 10
     assert result.templates_per_s > 0
     assert result.loaded_templates / max(elapsed, 0.001) >= 100.0
+
+
+def test_template_selector_uses_detected_stack_terms():
+    apache = NucleiTemplate("apache-check", "Apache Check", "info", "", tags=["apache", "tech"], http=[NucleiRequest(method="GET", paths=["http://example.test/"], matchers=[NucleiMatcher(type="status", status=[200])])])
+    iis = NucleiTemplate("iis-check", "IIS Check", "info", "", tags=["iis", "tech"], http=[NucleiRequest(method="GET", paths=["http://example.test/"], matchers=[NucleiMatcher(type="status", status=[200])])])
+    robots = NucleiTemplate("robots-txt-exposed", "robots", "info", "", tags=["files"], http=[NucleiRequest(method="GET", paths=["http://example.test/robots.txt"], matchers=[NucleiMatcher(type="status", status=[200])])])
+
+    selected, terms = select_nuclei_templates(
+        [apache, iis, robots],
+        {"host": "example.test", "port": 80, "service": "http", "server": "Apache/2.4.7", "technologies": ["Apache HTTP Server"]},
+        {"selection": {"enabled": True}},
+    )
+
+    ids = {template.template_id for template in selected}
+    assert "apache-check" in ids
+    assert "robots-txt-exposed" in ids
+    assert "iis-check" not in ids
+    assert "apache" in terms

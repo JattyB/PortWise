@@ -1,5 +1,10 @@
-Curated native nuclei-style templates for PortWise Phase G.
+Curated nuclei templates synced from ProjectDiscovery nuclei-templates.
 
-These are YAML data files consumed by the native template engine. They are a
-small practical subset intended for fixture and live-validation coverage, not a
-full mirror of the upstream template repository.
+Source: https://github.com/projectdiscovery/nuclei-templates
+Commit: ffa35164980a981fb28374c317caff2b94e4a607
+Included directories: http/technologies, http/exposures, http/misconfiguration, http/exposed-panels
+License: MIT (see LICENSE.upstream.md).
+
+Candidates scanned: 4043
+Runnable synced templates: 2815
+Skipped templates: 1228

@@ -123,10 +123,13 @@ class TemplateMatch:
 class NativeNucleiRunResult:
     findings: list[Finding] = field(default_factory=list)
     loaded_templates: int = 0
+    full_templates: int = 0
+    selected_templates: int = 0
     attempted_requests: int = 0
     matched_requests: int = 0
     skipped_features: list[str] = field(default_factory=list)
     skipped_templates: list[str] = field(default_factory=list)
+    selection_terms: list[str] = field(default_factory=list)
     elapsed_s: float = 0.0
 
     @property
@@ -155,18 +158,22 @@ class NativeNucleiEngine:
         started = time.perf_counter()
         cfg = config.get("web_template_engine", {}) if isinstance(config.get("web_template_engine"), dict) else {}
         templates, skipped_templates, skipped_features = load_nuclei_templates(cfg)
+        selected_templates, selection_terms = select_nuclei_templates(templates, target, cfg)
         result = NativeNucleiRunResult(
-            loaded_templates=len(templates),
+            loaded_templates=len(selected_templates),
+            full_templates=len(templates),
+            selected_templates=len(selected_templates),
             skipped_templates=skipped_templates,
             skipped_features=sorted(set(skipped_features)),
+            selection_terms=selection_terms,
         )
-        if not templates:
+        if not selected_templates:
             result.elapsed_s = time.perf_counter() - started
             _record_skips(config, result)
             return result
 
         semaphore = asyncio.Semaphore(int(cfg.get("concurrency", self.concurrency)))
-        tasks = [self._run_template(semaphore, template, target) for template in templates]
+        tasks = [self._run_template(semaphore, template, target) for template in selected_templates]
         outputs = await asyncio.gather(*tasks, return_exceptions=True)
         records: list[dict[str, Any]] = []
         for output in outputs:
@@ -240,7 +247,7 @@ def load_nuclei_templates(config: dict[str, Any]) -> tuple[list[NucleiTemplate],
         path = Path(str(location))
         if not path.exists():
             continue
-        for candidate in sorted(path.glob("*.yaml")) + sorted(path.glob("*.yml")):
+        for candidate in sorted(path.rglob("*.yaml")) + sorted(path.rglob("*.yml")):
             parsed = _load_template(candidate)
             if parsed is None:
                 skipped_templates.append(f"{candidate}: parse-error")
@@ -253,6 +260,99 @@ def load_nuclei_templates(config: dict[str, Any]) -> tuple[list[NucleiTemplate],
             template.path = str(candidate)
             templates.append(template)
     return templates, skipped_templates, sorted(set(skipped_features))
+
+
+def select_nuclei_templates(
+    templates: list[NucleiTemplate],
+    target: dict[str, Any],
+    config: dict[str, Any],
+) -> tuple[list[NucleiTemplate], list[str]]:
+    selection_cfg = config.get("selection", {}) if isinstance(config.get("selection"), dict) else {}
+    if not bool(selection_cfg.get("enabled", True)):
+        return templates, []
+
+    terms = _selection_terms(target)
+    always_include_ids = {
+        str(item).strip().lower()
+        for item in (selection_cfg.get("always_include_ids") or ["robots-txt-exposed"])
+        if str(item).strip()
+    }
+    selected: list[NucleiTemplate] = []
+    for template in templates:
+        template_id = template.template_id.strip().lower()
+        if template_id in always_include_ids:
+            selected.append(template)
+            continue
+        score = _template_score(template, terms)
+        if score > 0:
+            selected.append(template)
+    return selected, sorted(terms)
+
+
+def _selection_terms(target: dict[str, Any]) -> set[str]:
+    raw_terms: set[str] = set()
+    for key in ("service", "server", "x_powered_by"):
+        value = str(target.get(key, "") or "")
+        raw_terms.update(_tokenize(value))
+    for tech in target.get("technologies", []) or []:
+        raw_terms.update(_tokenize(str(tech)))
+    aliases = {
+        "asp": "aspnet",
+        "aspnet": "aspnet",
+        "apache": "apache",
+        "iis": "iis",
+        "microsoft": "iis",
+        "nginx": "nginx",
+        "php": "php",
+        "wordpress": "wordpress",
+        "joomla": "joomla",
+        "drupal": "drupal",
+        "tomcat": "tomcat",
+        "jboss": "jboss",
+    }
+    out: set[str] = set()
+    for token in raw_terms:
+        canonical = aliases.get(token, token)
+        if canonical not in {
+            "http",
+            "https",
+            "server",
+            "web",
+            "windows",
+            "ubuntu",
+            "linux",
+            "microsoft",
+            "net",
+            "version",
+        }:
+            out.add(canonical)
+    return out
+
+
+def _template_score(template: NucleiTemplate, terms: set[str]) -> int:
+    if not terms:
+        return 0
+    score = 0
+    tag_terms = {_normalize_token(tag) for tag in template.tags}
+    meta_terms = _tokenize(" ".join([template.template_id, template.name, template.description, template.path]))
+    for term in terms:
+        if term in tag_terms:
+            score += 4
+        if term in meta_terms:
+            score += 2
+    return score
+
+
+def _tokenize(text: str) -> set[str]:
+    return {
+        _normalize_token(token)
+        for token in re.split(r"[^a-zA-Z0-9]+", text.lower())
+        if len(token) >= 2
+    }
+
+
+def _normalize_token(token: str) -> str:
+    return token.lower().replace(".", "").replace("-", "").replace("_", "")
 
 
 def _load_template(path: Path) -> tuple[NucleiTemplate, list[str]] | None:
@@ -620,8 +720,11 @@ def _record_skips(config: dict[str, Any], result: NativeNucleiRunResult) -> None
         bucket["skipped_templates"] = list(result.skipped_templates)
         bucket["templates_per_s"] = round(result.templates_per_s, 2)
         bucket["loaded_templates"] = result.loaded_templates
+        bucket["full_templates"] = result.full_templates
+        bucket["selected_templates"] = result.selected_templates
         bucket["attempted_requests"] = result.attempted_requests
         bucket["matched_requests"] = result.matched_requests
+        bucket["selection_terms"] = list(result.selection_terms)
 
 
 async def run_native_nuclei_async(
