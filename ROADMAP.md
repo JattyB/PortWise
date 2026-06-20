@@ -25,11 +25,15 @@ transport, with strict false-positive control.
   and context checks; findings are redacted and marked manual-validation.
 - Moved secret scanning out of the crawler so inventory and secret detection are
   cleanly separated.
+- F-FIX: added a positive JS-endpoint extraction fixture that proves same-origin
+  relative paths, absolute URLs, `fetch()`, `axios`, XHR, `new URL()`, and
+  script-source extraction while suppressing off-origin and control values.
 - Live validation: `testaspnet.vulnweb.com` produced 16 crawl endpoints, 0 JS
   endpoints on the live surface, and 0 false positives at 1.22 crawl req/s.
   `testphp.vulnweb.com` archive validation fetched 1 archived JS snapshot and
   extracted 0 endpoints with 0 false positives at 20.89 req/s. Fixture
-  precision/recall: 1.000/1.000. Full suite green: 372 passed.
+  precision/recall: 1.000/1.000 for both secrets and positive JS extraction.
+  Full suite green: 372 passed.
 
 ---
 

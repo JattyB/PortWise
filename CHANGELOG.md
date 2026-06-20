@@ -13,6 +13,10 @@
   manual validation rather than echoing raw values.
 - Moved secret scanning out of the crawler so the crawler now owns surface
   inventory and the dedicated analyzer owns secret findings.
+- F-FIX: added a positive JavaScript endpoint-extraction fixture covering
+  relative paths, same-origin absolute URLs, `fetch()`, `axios`, `XHR.open`,
+  `new URL()`, and script sources. The fixture suppresses off-origin URLs and
+  non-HTTP/control values. Fixture precision/recall: 1.000/1.000.
 - Validation: fixture precision/recall reached 1.000/1.000 with
   must-not-flag samples `example.js`, `noise.js`, `doc.js`, and
   `vendor.min.js` suppressed. Live validation on `testaspnet.vulnweb.com`

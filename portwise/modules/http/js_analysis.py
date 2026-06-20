@@ -123,9 +123,13 @@ def _extract_js_endpoints(body: str, file_url: str, base_url: str) -> list[JsEnd
         if url and url not in seen:
             seen.add(url)
             endpoints.append(JsEndpoint(url=url, source=match.group(0)[:120], reason="fetch/xhr/axios", file_url=file_url))
-    for regex, reason in ((_ABSOLUTE_URL_RE, "absolute-url"), (_URL_LITERAL_RE, "string-literal"), (_NEW_URL_RE, "new-url")):
+    for regex, reason, group_index in (
+        (_ABSOLUTE_URL_RE, "absolute-url", 1),
+        (_URL_LITERAL_RE, "string-literal", 2),
+        (_NEW_URL_RE, "new-url", 1),
+    ):
         for match in regex.finditer(body):
-            candidate = match.group(1).strip()
+            candidate = match.group(group_index).strip()
             url = _normalize_endpoint(candidate, base_url)
             if url and url not in seen:
                 seen.add(url)
@@ -185,12 +189,32 @@ def _normalize_endpoint(candidate: str, base_url: str) -> str | None:
     if candidate.startswith("//"):
         candidate = "https:" + candidate
     if candidate.startswith(("http://", "https://")):
-        return _same_origin(candidate, base_url) and normalize_url(candidate) or None
+        normalized = normalize_url(candidate)
+        return normalized if _same_origin(normalized, base_url) and _interesting_path(normalized) else None
     if candidate.startswith(("/", "./", "../")) or "/" in candidate:
         joined = normalize_url(urljoin(base_url, candidate))
-        if _same_origin(joined, base_url):
+        if _same_origin(joined, base_url) and _interesting_path(joined):
             return joined
     return None
+
+
+def _interesting_path(url: str) -> bool:
+    path = urlsplit(url).path.lower()
+    ignored = (
+        ".css",
+        ".png",
+        ".jpg",
+        ".jpeg",
+        ".gif",
+        ".svg",
+        ".ico",
+        ".woff",
+        ".woff2",
+        ".ttf",
+        ".eot",
+        ".map",
+    )
+    return not path.endswith(ignored)
 
 
 def _same_origin(url: str, base_url: str) -> bool:
