@@ -1,0 +1,21 @@
+id: apache-server-detect
+
+info:
+  name: Apache Server Detected
+  severity: info
+  description: Detects Apache via the Server header.
+  tags: tech,apache,http
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/"
+    matchers-condition: and
+    matchers:
+      - type: status
+        status:
+          - 200
+      - type: regex
+        part: header
+        regex:
+          - "(?im)^server:\\s*Apache"

@@ -1,0 +1,21 @@
+id: robots-txt-exposed
+
+info:
+  name: robots.txt Exposed
+  severity: info
+  description: Detects a readable robots.txt file.
+  tags: files,robots,http
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/robots.txt"
+    matchers-condition: and
+    matchers:
+      - type: status
+        status:
+          - 200
+      - type: regex
+        part: body
+        regex:
+          - "(?im)^User-agent:"

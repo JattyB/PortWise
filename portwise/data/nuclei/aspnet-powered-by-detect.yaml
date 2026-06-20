@@ -1,0 +1,21 @@
+id: aspnet-powered-by-detect
+
+info:
+  name: ASP.NET X-Powered-By Detected
+  severity: info
+  description: Detects Microsoft ASP.NET via X-Powered-By.
+  tags: tech,aspnet,http
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/"
+    matchers-condition: and
+    matchers:
+      - type: status
+        status:
+          - 200
+      - type: regex
+        part: header
+        regex:
+          - "(?im)^x-powered-by:\\s*ASP\\.NET"

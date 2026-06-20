@@ -1,0 +1,21 @@
+id: iis-server-detect
+
+info:
+  name: IIS Server Detected
+  severity: info
+  description: Detects Microsoft IIS via the Server header.
+  tags: tech,iis,http
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/"
+    matchers-condition: and
+    matchers:
+      - type: status
+        status:
+          - 200
+      - type: regex
+        part: header
+        regex:
+          - "(?im)^server:\\s*Microsoft-IIS"

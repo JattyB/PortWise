@@ -11,7 +11,36 @@ opt-in per engagement). That is standard scope control, not a limitation.
 This roadmap drives PortWise to professional-grade PT capability. Phases are
 implemented in order, one commit per phase, tests green throughout.
 
-**Status: Phases 0-7 complete; native rebuild Phases A-F complete.** 372 tests passing.
+**Status: Phases 0-7 complete; native rebuild Phases A-G complete.** 381 tests passing.
+
+## Native rebuild Phase G - native nuclei-style template engine
+
+**Goal:** Native nuclei-format HTTP template execution through the shared
+transport with correctness-first matcher and extractor semantics.
+
+- Added a native async YAML template engine for HTTP templates with method/path,
+  raw-request, headers, and body support, plus concurrent execution through the
+  shared curl_cffi transport.
+- Implemented matchers for `status`, `word`, `regex`, `binary`, and `size`,
+  including `matchers-condition`, negative matching, and `part` selection across
+  `body`, `header`, and `all`.
+- Implemented extractors for `regex`, `kval`, and practical `json` paths, and
+  mapped template metadata and classification onto normal findings.
+- Added packaged curated templates plus configurable operator template
+  directories for custom coverage.
+- Unsupported features are skipped and logged rather than crashing. Current skip
+  list: top-level `workflow`/`workflows`/`flow`, `interactsh`, HTTP request keys
+  `payloads`/`attack`/`race`/`threads`, and matcher/extractor types outside the
+  supported subset such as `dsl`.
+- Fixture proof covers matcher types `status`, `word`, `regex`, `binary`, and
+  `size`; matcher `and`/`or`; negative matchers; parts `body`, `header`, and
+  `all`; and extractor types `regex`, `kval`, and `json`.
+- Live validation: curated templates achieved TP=4 FP=0 FN=0 across
+  `scanme.nmap.org` and `testaspnet.vulnweb.com`, matching Apache on scanme and
+  IIS + ASP.NET + exposed `robots.txt` on testaspnet. `testphp.vulnweb.com`
+  remained unreachable from this network, so no reachable-path template run was
+  possible there. Live throughput was 1.55 templates/sec; fixture benchmark was
+  >=100 templates/sec. Full suite green: 381 passed.
 
 ## Native rebuild Phase F - JavaScript endpoint extraction and secret analysis
 

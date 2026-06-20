@@ -8,6 +8,7 @@ from portwise.modules.http.content_discovery import run_content_discovery
 from portwise.modules.http.content_fuzzer import run_content_fuzzer_async
 from portwise.modules.http.archive_discovery import run_archive_url_discovery_async
 from portwise.modules.http.js_analysis import run_js_analysis_async
+from portwise.modules.http.nuclei_engine import run_native_nuclei_async
 from portwise.modules.http.injection_indicators import run_injection_indicators
 from portwise.modules.http.param_discovery import paramspider_finding, run_active_parameter_discovery_async
 from portwise.modules.http.signatures import has_password_form, match_admin_panel, match_default_install
@@ -259,6 +260,14 @@ class HttpEngine:
                 config,
                 surface,
             )))
+        template_cfg = config.get("web_template_engine", {}) if isinstance(config.get("web_template_engine"), dict) else {}
+        templates_enabled = bool(template_cfg.get("enabled", validation_level != "recon"))
+        if templates_enabled:
+            findings.extend(_run_sync(run_native_nuclei_async(
+                self.client,
+                target_dict,
+                config,
+            )).findings)
         return findings
 
     def _request(self, host: str, port: int, method: str, path: str, tls: bool) -> PoliteResponse:

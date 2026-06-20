@@ -2,6 +2,30 @@
 
 ## Unreleased
 
+### Phase G - native nuclei-style template engine
+- Added a native async nuclei-style HTTP template engine with YAML parsing,
+  concurrent execution through the shared curl_cffi transport, request-path and
+  raw-request support, matchers for `status`, `word`, `regex`, `binary`, and
+  `size`, and extractors for `regex`, `kval`, and `json`.
+- Template metadata now maps onto normal PortWise findings, including severity,
+  description, references, and CVE/CVSS classification.
+- Unsupported features are skipped and logged rather than crashing. Current
+  skipped features include top-level `workflow`/`workflows`/`flow`,
+  `interactsh`, HTTP request keys `payloads`/`attack`/`race`/`threads`, and
+  matcher or extractor types outside the supported subset such as `dsl`.
+- Added a curated packaged template set for live validation and operator
+  override support via configurable template directories.
+- Fixture proof now covers matcher types `status`, `word`, `regex`, `binary`,
+  and `size`, matcher `and`/`or`, negative matchers, parts `body`, `header`,
+  and `all`, plus extractor types `regex`, `kval`, and `json`.
+- Live validation: curated templates produced TP=4 FP=0 FN=0 across
+  `scanme.nmap.org` and `testaspnet.vulnweb.com`, matching Apache on scanme and
+  IIS + ASP.NET + `robots.txt` on testaspnet. `testphp.vulnweb.com` remained
+  unreachable from this network, so no reachable-path template check ran there.
+  Live throughput was 1.55 templates/sec with four templates over each reachable
+  target. Fixture benchmark recorded >=100 templates/sec on the in-process fake
+  harness. Full suite: 381 passed.
+
 ### Phase F - JavaScript endpoint extraction and secret analysis
 - Added a native JavaScript analysis pass that reuses the shared discovered
   surface, fetches same-origin JS through the shared curl_cffi transport, and
