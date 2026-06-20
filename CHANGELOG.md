@@ -42,6 +42,19 @@
   technology template; `testaspnet.vulnweb.com` selected 14/2819 templates and
   matched 4 expected findings (IIS, ASP.NET, IIS version, `robots.txt`). Live
   selected-mode result: TP=5 FP=0 FN=0, precision=1.000, recall=1.000.
+- G-RECALL-CHECK: template selection now always carries generic exposure,
+  misconfiguration, default-login/default-credential, common-file exposure, and
+  CVE/vulnerability templates alongside stack-tagged templates. The run result
+  records a breakdown of `tech_matched`, `always_on_generic`,
+  `explicit_always_include`, and dedupe overlap. Packaged-corpus selection
+  breakdown: `scanme.nmap.org` selected 1269/2819 templates
+  (tech-matched=104, always-on generic=1211, explicit=1, overlap=47);
+  `testaspnet.vulnweb.com` selected 1220/2819 templates (tech-matched=13,
+  always-on generic=1211, explicit=1, overlap=5). Live vulnweb reachability
+  timed out from this network, so the vulnerable-template path is proven by a
+  fixture that serves an exposed `.env` response and confirms the generic
+  exposure/CVE template fires under an unrelated Apache stack: TP=1 FP=0 FN=0,
+  precision=1.000, recall=1.000.
 
 ### Phase F - JavaScript endpoint extraction and secret analysis
 - Added a native JavaScript analysis pass that reuses the shared discovered

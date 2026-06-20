@@ -21,6 +21,35 @@ _SUPPORTED_EXTRACTORS = {"regex", "kval", "json"}
 _SKIPPED_MARKERS = ("workflow", "workflows", "interactsh", "flow")
 _UNSUPPORTED_HTTP_KEYS = {"dsl", "interactsh", "payloads", "attack", "race", "threads"}
 _STATIC_TEMPLATE_PATTERNS = ("{{BaseURL}}", "{{RootURL}}", "{{Hostname}}", "{{Host}}", "{{Port}}", "{{Scheme}}")
+_GENERIC_ALWAYS_ON_PATH_MARKERS = (
+    "http__exposures__",
+    "http__misconfiguration__",
+)
+_GENERIC_ALWAYS_ON_TAGS = {
+    "backup",
+    "backup-file",
+    "common-file",
+    "config",
+    "configs",
+    "cve",
+    "default-credentials",
+    "default-creds",
+    "default-login",
+    "default-password",
+    "disclosure",
+    "exposure",
+    "exposures",
+    "file",
+    "files",
+    "info-leak",
+    "misconfig",
+    "misconfiguration",
+    "secret",
+    "secrets",
+    "token",
+    "tokens",
+    "vuln",
+}
 _SEVERITY_MAP = {
     "critical": "critical",
     "high": "high",
@@ -130,6 +159,7 @@ class NativeNucleiRunResult:
     skipped_features: list[str] = field(default_factory=list)
     skipped_templates: list[str] = field(default_factory=list)
     selection_terms: list[str] = field(default_factory=list)
+    selection_breakdown: dict[str, int] = field(default_factory=dict)
     elapsed_s: float = 0.0
 
     @property
@@ -158,7 +188,7 @@ class NativeNucleiEngine:
         started = time.perf_counter()
         cfg = config.get("web_template_engine", {}) if isinstance(config.get("web_template_engine"), dict) else {}
         templates, skipped_templates, skipped_features = load_nuclei_templates(cfg)
-        selected_templates, selection_terms = select_nuclei_templates(templates, target, cfg)
+        selected_templates, selection_terms, breakdown = _select_nuclei_templates_with_breakdown(templates, target, cfg)
         result = NativeNucleiRunResult(
             loaded_templates=len(selected_templates),
             full_templates=len(templates),
@@ -166,6 +196,7 @@ class NativeNucleiEngine:
             skipped_templates=skipped_templates,
             skipped_features=sorted(set(skipped_features)),
             selection_terms=selection_terms,
+            selection_breakdown=breakdown,
         )
         if not selected_templates:
             result.elapsed_s = time.perf_counter() - started
@@ -267,9 +298,23 @@ def select_nuclei_templates(
     target: dict[str, Any],
     config: dict[str, Any],
 ) -> tuple[list[NucleiTemplate], list[str]]:
+    selected, terms, _breakdown = _select_nuclei_templates_with_breakdown(templates, target, config)
+    return selected, terms
+
+
+def _select_nuclei_templates_with_breakdown(
+    templates: list[NucleiTemplate],
+    target: dict[str, Any],
+    config: dict[str, Any],
+) -> tuple[list[NucleiTemplate], list[str], dict[str, int]]:
     selection_cfg = config.get("selection", {}) if isinstance(config.get("selection"), dict) else {}
     if not bool(selection_cfg.get("enabled", True)):
-        return templates, []
+        return templates, [], {
+            "tech_matched": len(templates),
+            "always_on_generic": 0,
+            "explicit_always_include": 0,
+            "overlap": 0,
+        }
 
     terms = _selection_terms(target)
     always_include_ids = {
@@ -277,16 +322,50 @@ def select_nuclei_templates(
         for item in (selection_cfg.get("always_include_ids") or ["robots-txt-exposed"])
         if str(item).strip()
     }
+    generic_always_on = bool(selection_cfg.get("generic_always_on", True))
     selected: list[NucleiTemplate] = []
+    selected_ids: set[str] = set()
+    tech_ids: set[str] = set()
+    generic_ids: set[str] = set()
+    explicit_ids: set[str] = set()
     for template in templates:
         template_id = template.template_id.strip().lower()
+        include = False
         if template_id in always_include_ids:
-            selected.append(template)
-            continue
+            explicit_ids.add(template_id)
+            include = True
+        if generic_always_on and _is_generic_always_on_template(template):
+            generic_ids.add(template_id)
+            include = True
         score = _template_score(template, terms)
         if score > 0:
+            tech_ids.add(template_id)
+            include = True
+        if include and template_id not in selected_ids:
             selected.append(template)
-    return selected, sorted(terms)
+            selected_ids.add(template_id)
+    breakdown = {
+        "tech_matched": len(tech_ids),
+        "always_on_generic": len(generic_ids),
+        "explicit_always_include": len(explicit_ids),
+        "overlap": len((tech_ids & generic_ids) | (tech_ids & explicit_ids) | (generic_ids & explicit_ids)),
+    }
+    return selected, sorted(terms), breakdown
+
+
+def _is_generic_always_on_template(template: NucleiTemplate) -> bool:
+    path = template.path.replace("\\", "/").lower()
+    filename = Path(path).name
+    if any(marker in filename for marker in _GENERIC_ALWAYS_ON_PATH_MARKERS):
+        return True
+    tags = {_normalize_token(tag) for tag in template.tags}
+    if tags & {_normalize_token(tag) for tag in _GENERIC_ALWAYS_ON_TAGS}:
+        return True
+    cve_id = template.classification.get("cve-id")
+    if cve_id:
+        return True
+    text_terms = _tokenize(" ".join([template.template_id, template.name, template.description]))
+    return bool(text_terms & {_normalize_token(tag) for tag in _GENERIC_ALWAYS_ON_TAGS})
 
 
 def _selection_terms(target: dict[str, Any]) -> set[str]:
@@ -725,6 +804,7 @@ def _record_skips(config: dict[str, Any], result: NativeNucleiRunResult) -> None
         bucket["attempted_requests"] = result.attempted_requests
         bucket["matched_requests"] = result.matched_requests
         bucket["selection_terms"] = list(result.selection_terms)
+        bucket["selection_breakdown"] = dict(result.selection_breakdown)
 
 
 async def run_native_nuclei_async(

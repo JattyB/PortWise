@@ -56,6 +56,17 @@ transport with correctness-first matcher and extractor semantics.
   `testaspnet.vulnweb.com` selected 14/2819 templates and matched 4 expected
   findings (IIS, ASP.NET, IIS version, `robots.txt`). Combined TP=5 FP=0 FN=0,
   precision=1.000, recall=1.000.
+- G-RECALL-CHECK: selection now keeps generic exposure, misconfiguration,
+  default-login/default-credential, common-file exposure, and CVE/vulnerability
+  templates always-on in addition to stack-matched templates. Selection
+  breakdown is recorded per run. Packaged-corpus breakdown:
+  `scanme.nmap.org` selected 1269/2819 templates (tech-matched=104,
+  always-on generic=1211, explicit=1, overlap=47);
+  `testaspnet.vulnweb.com` selected 1220/2819 templates (tech-matched=13,
+  always-on generic=1211, explicit=1, overlap=5). Live vulnweb reachability
+  timed out from this network; the deterministic vulnerable-response fixture
+  proves an exposed-file/CVE template fires under an unrelated detected stack:
+  TP=1 FP=0 FN=0, precision=1.000, recall=1.000.
 
 ## Native rebuild Phase F - JavaScript endpoint extraction and secret analysis
 

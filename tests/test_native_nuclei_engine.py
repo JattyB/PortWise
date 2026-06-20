@@ -12,6 +12,7 @@ from portwise.modules.http.nuclei_engine import (
     NucleiTemplate,
     TemplateResponse,
     _evaluate_matcher,
+    _select_nuclei_templates_with_breakdown,
     _json_path_lookup,
     _parse_raw_request,
     _run_extractor,
@@ -286,3 +287,86 @@ def test_template_selector_uses_detected_stack_terms():
     assert "robots-txt-exposed" in ids
     assert "iis-check" not in ids
     assert "apache" in terms
+
+
+def test_template_selector_keeps_generic_exposure_and_cve_templates_always_on():
+    request = NucleiRequest(method="GET", paths=["http://example.test/"], matchers=[NucleiMatcher(type="status", status=[200])])
+    apache = NucleiTemplate("apache-check", "Apache Check", "info", "", tags=["apache", "tech"], http=[request])
+    exposure = NucleiTemplate("env-file-exposure", ".env File Exposure", "high", "", tags=["exposure", "files"], http=[request])
+    exposure.path = "portwise/data/nuclei/templates/http__exposures__files__env.yaml"
+    cve = NucleiTemplate("CVE-2026-0001", "Generic CVE Probe", "critical", "", classification={"cve-id": "CVE-2026-0001"}, tags=["cve", "vuln"], http=[request])
+    iis = NucleiTemplate("iis-check", "IIS Check", "info", "", tags=["iis", "tech"], http=[request])
+
+    selected, terms, breakdown = _select_nuclei_templates_with_breakdown(
+        [apache, exposure, cve, iis],
+        {"host": "example.test", "port": 80, "service": "http", "server": "Apache/2.4.7", "technologies": ["Apache HTTP Server"]},
+        {"selection": {"enabled": True}},
+    )
+
+    ids = {template.template_id for template in selected}
+    assert ids == {"apache-check", "env-file-exposure", "CVE-2026-0001"}
+    assert "apache" in terms
+    assert breakdown["tech_matched"] == 1
+    assert breakdown["always_on_generic"] == 2
+    assert breakdown["explicit_always_include"] == 0
+
+
+def test_generic_exposure_template_fires_with_unrelated_detected_stack(tmp_path):
+    (tmp_path / "env-exposure.yaml").write_text(
+        """
+id: env-file-exposure
+info:
+  name: Environment File Exposure
+  severity: high
+  description: Detects exposed environment files.
+  classification:
+    cve-id: CVE-2026-9999
+  tags: exposure,files,cve
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/.env"
+    matchers-condition: and
+    matchers:
+      - type: status
+        status: [200]
+      - type: word
+        part: body
+        words: ["DB_PASSWORD=", "APP_KEY="]
+        condition: and
+""".strip(),
+        encoding="utf-8",
+    )
+    (tmp_path / "control.yaml").write_text(
+        """
+id: unrelated-iis-only
+info:
+  name: IIS Only Control
+  severity: info
+  tags: iis,tech
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/iis"
+    matchers:
+      - type: status
+        status: [200]
+""".strip(),
+        encoding="utf-8",
+    )
+    client = _NativeClient({
+        "http://example.test/.env": (200, [("Content-Type", "text/plain")], "APP_KEY=base64:test\nDB_PASSWORD=s3cret")
+    })
+
+    result = asyncio.run(run_native_nuclei_async(
+        client,  # type: ignore[arg-type]
+        {"host": "example.test", "port": 80, "protocol": "tcp", "service": "http", "server": "Apache/2.4.7", "technologies": ["Apache HTTP Server"]},
+        {"web_template_engine": {"enabled": True, "include_packaged": False, "template_dir": str(tmp_path), "selection": {"enabled": True}}},
+    ))
+
+    assert [finding.title for finding in result.findings] == ["Environment File Exposure"]
+    assert result.findings[0].cve_id == "CVE-2026-9999"
+    assert result.selection_breakdown["always_on_generic"] == 1
+    assert result.selection_breakdown["tech_matched"] == 0
+    assert result.attempted_requests == 1
+    assert result.matched_requests == 1
