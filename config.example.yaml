@@ -37,6 +37,12 @@ scanner:
   udp_service_detection_on_open_filtered: false
 
   tls_expiry_days: 30
+  tls:
+    # Default TLS path checks certs, chain/hostname, deprecated protocols,
+    # weak cipher families, weak DH, and HSTS. Full per-cipher inventory is
+    # heavier and intended for full-depth TLS review.
+    native_full_enumeration: false
+    native_enum_max_ciphers_per_version: 128
   snmp_default_community_check: true
   ftp_anonymous_check: true
 
@@ -146,11 +152,15 @@ cve:
   collapse_version_unknown: true
 
 # Cross-reference version-matched CVEs with public exploit availability. Local
-# lookups only (no network): searchsploit/ExploitDB and nuclei template presence.
+# lookups only (no network): packaged ExploitDB CSV and nuclei template presence.
 exploit_intel:
   enabled: true
-  searchsploit: true
+  exploitdb: true
+  # Optional compatibility path; not required for full capability.
+  searchsploit: false
   nuclei_templates: true
+  # Override packaged ExploitDB CSV if you maintain a newer local sync.
+  exploitdb_csv: ""
   # Override the nuclei-templates directory (else ~/nuclei-templates or $NUCLEI_TEMPLATES).
   nuclei_templates_dir: ""
 

@@ -3,6 +3,7 @@ from __future__ import annotations
 import socket
 import ssl
 import struct
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any
 
 from portwise.core.models import Confidence, Evidence, Finding, FindingCategory, Severity
@@ -165,34 +166,30 @@ _WEAK_FAMILY_STRINGS = ("-ALL:RC4:@SECLEVEL=0", "-ALL:3DES:@SECLEVEL=0", "-ALL:a
 _RAW_WEAK_CIPHERS = {
     "TLS_RSA_WITH_3DES_EDE_CBC_SHA": 0x000A,
 }
+_NATIVE_ENUM_PROTOCOLS = {
+    "TLS 1.0": getattr(ssl.TLSVersion, "TLSv1", None),
+    "TLS 1.1": getattr(ssl.TLSVersion, "TLSv1_1", None),
+    "TLS 1.2": getattr(ssl.TLSVersion, "TLSv1_2", None),
+    "TLS 1.3": getattr(ssl.TLSVersion, "TLSv1_3", None),
+}
 
 
 def _native_cipher_probe(host: str, port: int, target: dict[str, Any], module: str, timeout: float) -> list[Finding]:
     accepted: list[str] = []
-    for cipher_str in _WEAK_FAMILY_STRINGS:
-        try:
-            ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
-            ctx.check_hostname = False
-            ctx.verify_mode = ssl.CERT_NONE
-            ctx.maximum_version = ssl.TLSVersion.TLSv1_2
-            ctx.set_ciphers(cipher_str)
-        except ssl.SSLError:
-            continue
-        try:
-            with ctx.wrap_socket(socket.create_connection((host, port), timeout=timeout), server_hostname=host) as s:
-                negotiated = s.cipher()
-                if negotiated and _is_weak(negotiated[0]) and _matches_requested_family(cipher_str, negotiated[0]):
-                    accepted.append(negotiated[0])
-        except (ssl.SSLError, OSError, TimeoutError):
-            pass
-    if target.get("tls_cert_retrieved") is False:
-        for name, suite in _RAW_WEAK_CIPHERS.items():
-            if _raw_tls_cipher_probe(host, port, host, suite, timeout):
-                accepted.append(name)
-    if port == 443 or target.get("force_weak_dh_probe"):
-        weak_dh = _weak_dh_probe(host, port, host, timeout)
-        if weak_dh:
-            accepted.append(weak_dh)
+    probe_timeout = timeout
+    jobs = []
+    with ThreadPoolExecutor(max_workers=6) as executor:
+        for cipher_str in _WEAK_FAMILY_STRINGS:
+            jobs.append(executor.submit(_weak_family_probe, host, port, host, cipher_str, probe_timeout))
+        if target.get("tls_cert_retrieved") is False:
+            for name, suite in _RAW_WEAK_CIPHERS.items():
+                jobs.append(executor.submit(_raw_weak_cipher_name_probe, host, port, host, name, suite, probe_timeout))
+        if port == 443 or target.get("force_weak_dh_probe"):
+            jobs.append(executor.submit(_weak_dh_probe, host, port, host, probe_timeout))
+        for future in as_completed(jobs):
+            result = future.result()
+            if result:
+                accepted.append(result)
     if not accepted:
         return []
     poc = _poc_ciphers(host, port)
@@ -213,6 +210,146 @@ def _native_cipher_probe(host: str, port: int, target: dict[str, Any], module: s
         category=FindingCategory.VULNERABILITY,
         tags=["tls", "weak-cipher", "native-probe"],
     )]
+
+
+def _weak_family_probe(host: str, port: int, server_name: str, cipher_str: str, timeout: float) -> str | None:
+    try:
+        ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
+        ctx.maximum_version = ssl.TLSVersion.TLSv1_2
+        ctx.set_ciphers(cipher_str)
+    except ssl.SSLError:
+        return None
+    try:
+        with ctx.wrap_socket(socket.create_connection((host, port), timeout=timeout), server_hostname=server_name) as s:
+            negotiated = s.cipher()
+            if negotiated and _is_weak(negotiated[0]) and _matches_requested_family(cipher_str, negotiated[0]):
+                return negotiated[0]
+    except (ssl.SSLError, OSError, TimeoutError):
+        return None
+    return None
+
+
+def _raw_weak_cipher_name_probe(host: str, port: int, server_name: str, name: str, suite: int, timeout: float) -> str | None:
+    return name if _raw_tls_cipher_probe(host, port, server_name, suite, timeout) else None
+
+
+def _native_cipher_enumeration(host: str, port: int, server_name: str, timeout: float, max_ciphers: int) -> dict[str, list[dict[str, Any]]]:
+    enumeration: dict[str, list[dict[str, Any]]] = {}
+    for label, version in _NATIVE_ENUM_PROTOCOLS.items():
+        if version is None:
+            continue
+        accepted: list[dict[str, Any]] = []
+        if label == "TLS 1.3":
+            negotiated = _negotiate_cipher(host, port, server_name, version, None, timeout)
+            if negotiated:
+                accepted.append(_cipher_info(negotiated))
+            if accepted:
+                enumeration[label] = accepted
+            continue
+        for cipher_name in _candidate_cipher_names(version):
+            negotiated = _negotiate_cipher(host, port, server_name, version, cipher_name, timeout)
+            if not negotiated:
+                continue
+            info = _cipher_info(negotiated)
+            if info not in accepted:
+                accepted.append(info)
+            if len(accepted) >= max_ciphers:
+                break
+        if accepted:
+            enumeration[label] = accepted
+    return enumeration
+
+
+def _native_enumeration_finding(host: str, port: int, target: dict[str, Any], module: str, enumeration: dict[str, list[dict[str, Any]]]) -> Finding | None:
+    if not enumeration:
+        return None
+    protocol_count = len(enumeration)
+    cipher_count = sum(len(items) for items in enumeration.values())
+    poc = _poc_ciphers(host, port)
+    return Finding(
+        title="TLS Native Cipher Enumeration",
+        severity=Severity.INFO,
+        asset=host,
+        port=port,
+        protocol=str(target.get("protocol", "tcp")),
+        service=str(target.get("service", "")),
+        description=f"Native TLS handshakes enumerated {cipher_count} accepted cipher/protocol combinations across {protocol_count} protocol version(s).",
+        recommendation="Use this inventory to confirm only approved TLS versions and cipher suites remain enabled.",
+        confidence=Confidence.CONFIRMED,
+        evidence_strength=4,
+        type="tls-info",
+        module=module,
+        false_positive_risk="low",
+        manual_validation=False,
+        evidence=[Evidence("module:tls:native-cipher-enum", "Per-version native cipher enumeration completed.", 4, {
+            "protocols": enumeration,
+            "poc_command": poc,
+        })],
+        category=FindingCategory.INFORMATION,
+        tags=["tls", "cipher-enumeration", "safe-active"],
+    )
+
+
+def _candidate_cipher_names(version: ssl.TLSVersion) -> list[str]:
+    try:
+        ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
+        ctx.minimum_version = version
+        ctx.maximum_version = version
+        if version in {ssl.TLSVersion.TLSv1, ssl.TLSVersion.TLSv1_1}:
+            ctx.set_ciphers("ALL:@SECLEVEL=0")
+        names = []
+        for item in ctx.get_ciphers():
+            name = str(item.get("name", ""))
+            if name and not name.startswith("TLS_"):
+                names.append(name)
+        return sorted(set(names))
+    except (ssl.SSLError, ValueError):
+        return []
+
+
+def _negotiate_cipher(host: str, port: int, server_name: str, version: ssl.TLSVersion, cipher_name: str | None, timeout: float) -> tuple[str, str, int] | None:
+    try:
+        ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
+        ctx.minimum_version = version
+        ctx.maximum_version = version
+        if version in {ssl.TLSVersion.TLSv1, ssl.TLSVersion.TLSv1_1}:
+            ctx.set_ciphers("ALL:@SECLEVEL=0")
+        if cipher_name:
+            ctx.set_ciphers(f"{cipher_name}:@SECLEVEL=0")
+        with ctx.wrap_socket(socket.create_connection((host, port), timeout=timeout), server_hostname=server_name) as tls_sock:
+            negotiated = tls_sock.cipher()
+            negotiated_version = tls_sock.version() or ""
+            if negotiated and _version_matches_label(version, negotiated_version):
+                return negotiated
+    except (ssl.SSLError, OSError, TimeoutError, ValueError):
+        return None
+    return None
+
+
+def _cipher_info(negotiated: tuple[str, str, int]) -> dict[str, Any]:
+    name, protocol, bits = negotiated
+    return {
+        "name": name,
+        "protocol": protocol,
+        "bits": bits,
+        "weak": _is_weak(name),
+    }
+
+
+def _version_matches_label(version: ssl.TLSVersion, negotiated: str) -> bool:
+    expected = {
+        ssl.TLSVersion.TLSv1: "TLSv1",
+        ssl.TLSVersion.TLSv1_1: "TLSv1.1",
+        ssl.TLSVersion.TLSv1_2: "TLSv1.2",
+        ssl.TLSVersion.TLSv1_3: "TLSv1.3",
+    }.get(version)
+    return expected == negotiated
 
 
 def _raw_tls_cipher_probe(host: str, port: int, server_name: str, cipher_suite: int, timeout: float) -> bool:
@@ -313,5 +450,12 @@ def run_cipher_checks(service: Any, target: dict[str, Any], config: dict[str, An
         port = int(target.get("port", 443))
         timeout = float(tls_config.get("timeout", config.get("timeout", 5)))
         findings.extend(_native_cipher_probe(host, port, target, module, timeout))
+        if bool(tls_config.get("native_full_enumeration", False)):
+            server_name = str(target.get("hostname") or host)
+            max_ciphers = int(tls_config.get("native_enum_max_ciphers_per_version", 128))
+            enumeration = _native_cipher_enumeration(host, port, server_name, timeout, max_ciphers)
+            enum_finding = _native_enumeration_finding(host, port, target, module, enumeration)
+            if enum_finding:
+                findings.append(enum_finding)
 
     return findings

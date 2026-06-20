@@ -2,6 +2,34 @@
 
 ## Unreleased
 
+### Phase H - TLS deepening and native ExploitDB
+- Deepened the native TLS path with optional full per-version cipher inventory
+  (`tls.native_full_enumeration`) that records accepted cipher/protocol
+  combinations as an informational finding. The default TLS path remains focused
+  on fast vulnerability coverage: certificate metadata, chain trust, hostname
+  matching, deprecated protocols, weak cipher families, weak DH parameters, and
+  HSTS.
+- Certificate evidence now carries revocation/issuer metadata exposed by the
+  local OpenSSL decoder (`OCSP`, `caIssuers`, and CRL distribution points) when
+  available.
+- Native weak cipher probes now run bounded probes concurrently, preserving
+  3DES/DH coverage while reducing wall-clock impact versus sequential handshakes.
+- Replaced required `searchsploit` usage with a native offline ExploitDB lookup
+  over packaged `data/exploitdb/files_exploits.csv`, synced from the official
+  Exploit Database GitLab dump. Matching supports exact CVE codes plus
+  product/version title matching with guarded range handling. `searchsploit`
+  remains optional compatibility only.
+- ExploitDB fixture validation: Log4j CVE lookup, Apache httpd 2.4.7 exact
+  product/version lookup, OpenSSH `< 7.4` range lookup, and Apache httpd 2.4.8
+  must-not-match control all pass: TP=3 FP=0 FN=0, precision=1.000,
+  recall=1.000.
+- Live validation: badssl answer-key pass stayed green at TP=7 FP=0 FN=0,
+  precision=1.000, recall=1.000, speed=0.073 targets/sec. Live scanme service
+  detection found OpenSSH 6.6.1p1 on 22/tcp and Apache httpd 2.4.7 on 80/tcp;
+  native ExploitDB returned expected references for both (Apache EDB-34133 and
+  EDB-40142; OpenSSH EDB-40962, EDB-40963, and EDB-45939) with the Apache
+  2.4.8 control returning zero hits. Full suite: 387 passed.
+
 ### Phase G - native nuclei-style template engine
 - Added a native async nuclei-style HTTP template engine with YAML parsing,
   concurrent execution through the shared curl_cffi transport, request-path and

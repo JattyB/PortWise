@@ -11,7 +11,34 @@ opt-in per engagement). That is standard scope control, not a limitation.
 This roadmap drives PortWise to professional-grade PT capability. Phases are
 implemented in order, one commit per phase, tests green throughout.
 
-**Status: Phases 0-7 complete; native rebuild Phases A-G complete.** 381 tests passing.
+**Status: Phases 0-7 complete; native rebuild Phases A-H complete.** 387 tests passing.
+
+## Native rebuild Phase H - TLS deepening and native ExploitDB
+
+**Goal:** sslyze-class native TLS assessment depth and native offline
+ExploitDB correlation without requiring external binaries.
+
+- TLS now keeps the default vulnerability path fast while adding optional full
+  per-version cipher inventory through `tls.native_full_enumeration`. The
+  inventory records accepted cipher/protocol combinations in an informational
+  finding; default-on checks still cover certificates, chain trust, hostname
+  matching, deprecated protocols, weak cipher families, weak DH parameters, and
+  HSTS.
+- Certificate evidence includes revocation and issuer metadata exposed by the
+  local OpenSSL decoder (`OCSP`, `caIssuers`, CRL distribution points) when
+  present.
+- Native weak cipher probes run bounded family/raw/DH checks concurrently.
+- Exploit intel now ships the official ExploitDB `files_exploits.csv` as package
+  data and performs native offline matching by CVE code, product, and detected
+  version. `searchsploit` is optional compatibility only, not required
+  capability.
+- Fixture validation: Log4j CVE lookup, Apache httpd 2.4.7 exact lookup,
+  OpenSSH `< 7.4` range lookup, and Apache httpd 2.4.8 must-not-match control:
+  TP=3 FP=0 FN=0, precision=1.000, recall=1.000.
+- Live validation: badssl answer key remained TP=7 FP=0 FN=0, precision=1.000,
+  recall=1.000, speed=0.073 targets/sec. Scanme live service detection found
+  OpenSSH 6.6.1p1 and Apache httpd 2.4.7; native ExploitDB returned expected
+  references for both, and the Apache 2.4.8 control returned zero hits.
 
 ## Native rebuild Phase G - native nuclei-style template engine
 

@@ -131,7 +131,7 @@ def test_native_probe_handles_unsupported_family_gracefully():
     from portwise.core.models import Service
     svc = Service(host="127.0.0.1", port=443, protocol="tcp", state="open")
     target = {"host": "127.0.0.1", "port": 443, "protocol": "tcp", "service": "https", "scripts": {}}
-    config = {"tls": {"native_cipher_probe": True}}
+    config = {"tls": {"native_cipher_probe": True, "native_full_enumeration": False}}
 
     # Patch ssl.SSLContext to always raise SSLError (cipher not supported by OpenSSL)
     with patch("portwise.modules.tls.cipher_checks.ssl.SSLContext") as mock_ctx_cls:
@@ -185,7 +185,7 @@ def test_native_probe_pins_tls12_and_ignores_tls13_negotiation():
         patch("portwise.modules.tls.cipher_checks.socket.create_connection", return_value=FakeSocket()),
         patch("portwise.modules.tls.cipher_checks._raw_tls_cipher_probe", return_value=False),
     ):
-        findings = run_cipher_checks(svc, target, {"tls": {"native_cipher_probe": True}})
+        findings = run_cipher_checks(svc, target, {"tls": {"native_cipher_probe": True, "native_full_enumeration": False}})
 
     assert findings == []
     assert contexts
@@ -229,7 +229,7 @@ def test_native_probe_does_not_record_aes_fallback_from_weak_family():
         patch("portwise.modules.tls.cipher_checks._raw_tls_cipher_probe", return_value=False),
         patch("portwise.modules.tls.cipher_checks._weak_dh_probe", return_value=None),
     ):
-        findings = run_cipher_checks(svc, target, {"tls": {"native_cipher_probe": True}})
+        findings = run_cipher_checks(svc, target, {"tls": {"native_cipher_probe": True, "native_full_enumeration": False}})
 
     assert findings == []
 
@@ -248,7 +248,7 @@ def test_native_probe_reports_weak_dh_rejection():
         instance = MagicMock()
         instance.set_ciphers.side_effect = __import__("ssl").SSLError("no ciphers available")
         mock_ctx_cls.return_value = instance
-        findings = run_cipher_checks(svc, target, {"tls": {"native_cipher_probe": True}})
+        findings = run_cipher_checks(svc, target, {"tls": {"native_cipher_probe": True, "native_full_enumeration": False}})
 
     weak = [f for f in findings if f.title == "Weak TLS Ciphers In Use"]
     assert weak
@@ -269,3 +269,25 @@ def test_server_hello_cipher_parser_extracts_selected_suite():
     record = b"\x16\x03\x03" + len(handshake).to_bytes(2, "big") + handshake
 
     assert _server_hello_cipher(record) == 0x000A
+
+
+def test_native_full_enumeration_emits_inventory_finding():
+    from portwise.core.models import Service
+    from portwise.modules.tls import cipher_checks
+
+    svc = Service(host="127.0.0.1", port=9443, protocol="tcp", state="open")
+    target = {"host": "127.0.0.1", "hostname": "example.test", "port": 9443, "protocol": "tcp", "service": "https", "scripts": {}}
+
+    with (
+        patch("portwise.modules.tls.cipher_checks._native_cipher_probe", return_value=[]),
+        patch("portwise.modules.tls.cipher_checks._candidate_cipher_names", return_value=["ECDHE-RSA-AES128-GCM-SHA256"]),
+        patch("portwise.modules.tls.cipher_checks._negotiate_cipher", return_value=("ECDHE-RSA-AES128-GCM-SHA256", "TLSv1.2", 128)),
+    ):
+        findings = run_cipher_checks(svc, target, {"tls": {"native_cipher_probe": True, "native_full_enumeration": True}})
+
+    enum = [f for f in findings if f.title == "TLS Native Cipher Enumeration"]
+    assert enum
+    protocols = enum[0].evidence[0].data["protocols"]
+    assert "TLS 1.2" in protocols
+    assert protocols["TLS 1.2"][0]["name"] == "ECDHE-RSA-AES128-GCM-SHA256"
+    assert enum[0].category == FindingCategory.INFORMATION

@@ -41,6 +41,7 @@ def test_no_ocsp_finding_emitted():
         patch.object(engine, "_fetch_certificate", return_value=None),
         patch.object(engine, "_protocol_findings", return_value=[]),
         patch.object(engine, "_hsts_findings", return_value=[]),
+        patch.object(engine, "_cipher_findings", return_value=[]),
     ):
         findings = engine.run(_make_service())
     titles = [f.title for f in findings]
@@ -123,6 +124,7 @@ def test_all_tls_findings_have_module_set():
         patch.object(engine, "_fetch_certificate", return_value=None),
         patch.object(engine, "_test_protocol", return_value=False),
         patch.object(engine, "_hsts_findings", return_value=[]),
+        patch.object(engine, "_cipher_findings", return_value=[]),
     ):
         findings = engine.run(service)
 

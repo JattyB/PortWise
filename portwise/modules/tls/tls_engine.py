@@ -83,6 +83,7 @@ class TlsEngine:
             "service": service.service_name,
             "scripts": service.scripts,
             "tls_cert_retrieved": cert_retrieved,
+            "hostname": service.hostname,
         }
         return run_cipher_checks(service, target, {}, module="tls")
 
@@ -168,6 +169,9 @@ class TlsEngine:
             "notBefore": not_before,
             "notAfter": not_after,
             "serialNumber": serial,
+            "ocsp": cert.get("OCSP", ()),
+            "caIssuers": cert.get("caIssuers", ()),
+            "crlDistributionPoints": cert.get("crlDistributionPoints", ()),
         }
         findings.append(Finding(
             title="TLS Certificate Metadata",
