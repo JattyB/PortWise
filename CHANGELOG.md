@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+### Phase I - Playwright screenshots
+- Replaced the optional gowitness screenshot path with native Playwright
+  capture behind the `portwise[screenshots]` extra. Screenshot capture uses a
+  real Chromium browser context, ignores HTTPS errors by default for assessment
+  targets, writes PNG evidence under `evidence/screenshots`, and records
+  `engine=playwright`, `url`, and `screenshot` evidence fields.
+- Missing Playwright or missing managed Chromium never crashes the scan. PortWise
+  skips screenshot capture with a clear note (`install portwise[screenshots]` or
+  `playwright install chromium`) and continues.
+- Screenshot evidence remains attached to matching web findings and dedicated
+  screenshot findings, so the existing POC bundle includes image paths without a
+  report-format contract change.
+- Validation: live capture produced PNGs for `scanme.nmap.org` and
+  `testaspnet.vulnweb.com` and the generated POC index referenced both image
+  paths. Absent-extra validation returned zero findings plus a clear skip note.
+
 ### H1-FIX - curl_cffi async transport teardown
 - Fixed curl_cffi shutdown races where async socket callbacks could fire after
   their event loop closed. Sync `PoliteHttpClient` calls now run on a

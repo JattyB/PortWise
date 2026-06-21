@@ -11,7 +11,26 @@ opt-in per engagement). That is standard scope control, not a limitation.
 This roadmap drives PortWise to professional-grade PT capability. Phases are
 implemented in order, one commit per phase, tests green throughout.
 
-**Status: Phases 0-7 complete; native rebuild Phases A-H complete; H1 transport teardown fixed.** 389 tests passing.
+**Status: Phases 0-7 complete; native rebuild Phases A-I complete.** 390 tests passing.
+
+## Native rebuild Phase I - Playwright screenshots
+
+**Goal:** browser-rendered screenshot evidence without required external
+binaries.
+
+- Screenshot capture now uses Playwright through the optional
+  `portwise[screenshots]` extra instead of gowitness. The engine launches a
+  managed Chromium browser context, captures each unique discovered web service,
+  and writes PNGs to `evidence/screenshots`.
+- The screenshot evidence contract is stable: findings receive `engine`,
+  `url`, and `screenshot` fields, and the POC bundle includes the image path.
+- Missing Playwright or missing managed Chromium is a clean skip with an
+  operator note; screenshot capture is not a hard dependency and never blocks
+  the scan.
+- Live validation produced screenshots for `scanme.nmap.org` and
+  `testaspnet.vulnweb.com`; both paths were referenced from matching findings
+  and the generated POC index. Absent-extra simulation returned no findings and
+  a clear `install portwise[screenshots]` note.
 
 ## H1-FIX - curl_cffi async transport teardown
 

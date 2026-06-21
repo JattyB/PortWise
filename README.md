@@ -5,8 +5,8 @@ for authorized assessments.
 
 PortWise is the brain that ties best-in-class scanners and native protocol
 checks into one prioritized report: it discovers services, runs native
-protocol-level validation, orchestrates optional external engines (nuclei, ffuf,
-gowitness, masscan, testssl), correlates and de-duplicates findings, maps
+protocol-level validation, orchestrates optional engines (nuclei, ffuf,
+Playwright screenshots, masscan, testssl), correlates and de-duplicates findings, maps
 version-matched CVEs, captures evidence/POCs, and generates JSON, HTML, and
 Excel reports suitable for client delivery.
 
@@ -32,10 +32,12 @@ It answers, with a visible evidence chain:
 
 - **Native** protocol-level checks (SSH KEX, SMB negotiate, TLS handshake, HTTP
   fingerprint, banner grab) — dependency-free.
-- **Orchestrated** heavy/fast-moving engines (nuclei, ffuf, gowitness, testssl,
-  masscan, nmap) as **optional** integrations: detect the binary on PATH, run
-  it, parse its JSON output into PortWise `Finding` objects; if absent, skip with
-  a note and emit the equivalent command through the handoff system.
+- **Orchestrated** heavy/fast-moving engines (nuclei, ffuf, testssl, masscan,
+  nmap) as **optional** integrations: detect the binary on PATH, run it, parse
+  its JSON output into PortWise `Finding` objects; if absent, skip with a note
+  and emit the equivalent command through the handoff system. Playwright
+  screenshots are an optional Python extra: install `portwise[screenshots]` to
+  capture browser-rendered web evidence with managed Chromium.
 
 PortWise is the orchestration + correlation engine; it does not reimplement
 those engines.
@@ -136,7 +138,7 @@ portwise doctor
 | nmap | discovery, port + service detection | core scanning unavailable |
 | nuclei | templated web/vuln checks (`-jsonl`) | skipped; handoff command emitted |
 | ffuf | content discovery (`-of json`) | skipped; handoff command emitted |
-| gowitness | web service screenshots | skipped; handoff command emitted |
+| Playwright | browser-rendered web service screenshots | skipped; install `portwise[screenshots]` |
 | testssl | deep TLS analysis | native TLS checks still run |
 | masscan | fast port sweeps | nmap used instead |
 | ssh-audit | SSH algorithm cross-check | native KEXINIT probe still runs |

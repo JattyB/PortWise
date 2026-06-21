@@ -373,7 +373,7 @@ def _run_screenshot_phase(
     no_modules: bool,
     progress: ProgressTracker | None,
 ) -> None:
-    """Capture optional gowitness screenshots of web services at full depth."""
+    """Capture optional Playwright screenshots of web services at full depth."""
     http_targets = routes.get("http_targets", [])
     depth = str(module_config.get("validation_level", config.scanner.get("validation_level", "recon")))
     shots_cfg = config.raw.get("screenshots", {}) if isinstance(config.raw.get("screenshots"), dict) else {}
@@ -395,7 +395,7 @@ def _run_screenshot_phase(
 
     out_dir = str(workspace / "evidence" / "screenshots")
     if progress:
-        progress.start_phase("Screenshot capture", f"gowitness over {len(http_targets)} web target(s)")
+        progress.start_phase("Screenshot capture", f"Playwright over {len(http_targets)} web target(s)")
     engine_config = {**module_config, "screenshots": shots_cfg}
     shot_findings, shot_notes = run_screenshots(
         http_targets,

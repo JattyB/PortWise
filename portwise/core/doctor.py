@@ -6,6 +6,7 @@ present and fall back to handoff commands when absent.
 """
 from __future__ import annotations
 
+import importlib.util
 from dataclasses import dataclass
 
 from portwise.core.external_tool import ExternalTool
@@ -41,8 +42,8 @@ _ENGINES: tuple[tuple[str, str, str, str], ...] = (
      "skipped; equivalent nuclei command emitted via handoff"),
     ("ffuf", "ffuf", "content discovery parsed from -of json",
      "native content discovery only; ffuf command emitted via handoff"),
-    ("gowitness", "gowitness", "web service screenshots for evidence/POC",
-     "skipped; gowitness command emitted via handoff"),
+    ("playwright", "portwise[screenshots]", "web service screenshots for evidence/POC",
+     "skipped; install the portwise[screenshots] extra"),
     ("testssl", "testssl.sh", "deep TLS analysis imported from JSON",
      "native TLS handshake checks still run"),
     ("ssh-audit", "ssh-audit", "SSH algorithm cross-check",
@@ -55,8 +56,15 @@ _ENGINES: tuple[tuple[str, str, str, str], ...] = (
 def collect_engine_status() -> list[EngineStatus]:
     statuses: list[EngineStatus] = []
     for name, binary, enables, fallback in _ENGINES:
-        tool = ExternalTool(name, binary=binary)
-        path = tool.resolve()
+        if name == "playwright":
+            try:
+                spec = importlib.util.find_spec("playwright.async_api")
+            except ModuleNotFoundError:
+                spec = None
+            path = spec.origin if spec and spec.origin else None
+        else:
+            tool = ExternalTool(name, binary=binary)
+            path = tool.resolve()
         statuses.append(EngineStatus(
             name=name,
             binary=binary,

@@ -125,14 +125,19 @@ web_engines:
     match_codes: ""       # e.g. "200,204,301,302,307,401,403"; default ffuf -ac calibration
     extra_args: []
 
-# Optional screenshot evidence via gowitness. Runs at 'full' depth when the
-# binary is on PATH; image paths are attached to web findings and the POC bundle.
+# Optional screenshot evidence via Playwright. Runs at 'full' depth when the
+# portwise[screenshots] extra is installed; image paths are attached to web
+# findings and the POC bundle. Missing extras skip cleanly.
 screenshots:
   enabled: true
-  gowitness:
+  playwright:
     enabled: true
-    timeout: 60
-    extra_args: []
+    timeout: 30
+    wait_until: domcontentloaded
+    full_page: true
+    width: 1366
+    height: 768
+    ignore_https_errors: true
 
 cve:
   enabled: true

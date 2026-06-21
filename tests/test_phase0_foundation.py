@@ -80,7 +80,7 @@ def test_parse_json_output_variants():
 def test_doctor_collects_known_engines():
     statuses = collect_engine_status()
     names = {s.name for s in statuses}
-    assert {"nmap", "nuclei", "ffuf", "gowitness", "testssl", "masscan", "ssh-audit", "searchsploit"} <= names
+    assert {"nmap", "nuclei", "ffuf", "playwright", "testssl", "masscan", "ssh-audit", "searchsploit"} <= names
     rendered = render_doctor(statuses)
     assert "PortWise doctor" in rendered
     assert "nuclei" in rendered

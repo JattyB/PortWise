@@ -1,8 +1,8 @@
 """Shared adapter for optional external engines.
 
-PortWise is the orchestration + correlation brain; heavy/fast-moving engines
-(nuclei, ffuf, gowitness, testssl, masscan, searchsploit, ssh-audit) are *optional*
-hands. Every integration goes through this adapter so behavior is uniform:
+PortWise is the orchestration + correlation brain; heavy/fast-moving external
+engines (nuclei, ffuf, testssl, masscan, searchsploit, ssh-audit) are *optional*
+hands. Every external-binary integration goes through this adapter so behavior is uniform:
 
     detect-on-PATH  ->  run-with-timeout  ->  parse JSON  ->  graceful fallback
 

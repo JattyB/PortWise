@@ -29,6 +29,9 @@ dev = [
 browser = [
   "playwright>=1.45",
 ]
+screenshots = [
+  "playwright>=1.45",
+]
 
 [project.scripts]
 portwise = "portwise.cli:main"
