@@ -477,6 +477,33 @@ class PoliteHttpClient:
         self._host_locks: dict[str, asyncio.Lock] = {}
         self.vhost: str | None = None
         self.sni: str | None = None
+        self._sync_loop: asyncio.AbstractEventLoop | None = None
+        self._sync_loop_thread: threading.Thread | None = None
+        self._sync_loop_lock = threading.Lock()
+
+    async def close(self) -> None:
+        close = getattr(self.transport, "close", None)
+        if close is not None:
+            result = close()
+            if inspect.isawaitable(result):
+                await result
+        await asyncio.sleep(0.05)
+
+    def close_sync(self) -> None:
+        with self._sync_loop_lock:
+            loop = self._sync_loop
+            thread = self._sync_loop_thread
+        if loop is not None and thread is not None and thread.is_alive():
+            future = asyncio.run_coroutine_threadsafe(self.close(), loop)
+            future.result(timeout=10)
+            loop.call_soon_threadsafe(loop.stop)
+            thread.join(timeout=10)
+            loop.close()
+            with self._sync_loop_lock:
+                self._sync_loop = None
+                self._sync_loop_thread = None
+            return
+        _run_sync(self.close())
 
     def is_tripped(self, host: str) -> bool:
         return host in self._tripped
@@ -510,7 +537,7 @@ class PoliteHttpClient:
         body: str | bytes | None = None,
         allow_redirects: bool = True,
     ) -> PoliteResponse:
-        return _run_sync(self.request_async(
+        return self._run_coroutine_sync(self.request_async(
             host,
             port,
             method,
@@ -618,7 +645,7 @@ class PoliteHttpClient:
         timeout: float = 10.0,
         allow_redirects: bool = True,
     ) -> PoliteResponse:
-        return _run_sync(self.request_url_async(
+        return self._run_coroutine_sync(self.request_url_async(
             url,
             method=method,
             headers=headers,
@@ -656,6 +683,33 @@ class PoliteHttpClient:
             body=body,
             allow_redirects=allow_redirects,
         )
+
+    def _run_coroutine_sync(self, coro):
+        loop = self._ensure_sync_loop()
+        future = asyncio.run_coroutine_threadsafe(coro, loop)
+        return future.result()
+
+    def _ensure_sync_loop(self) -> asyncio.AbstractEventLoop:
+        with self._sync_loop_lock:
+            if self._sync_loop is not None and self._sync_loop_thread is not None and self._sync_loop_thread.is_alive():
+                return self._sync_loop
+            ready = threading.Event()
+            holder: dict[str, asyncio.AbstractEventLoop] = {}
+
+            def runner() -> None:
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                holder["loop"] = loop
+                ready.set()
+                loop.run_forever()
+
+            thread = threading.Thread(target=runner, name="portwise-http-loop", daemon=True)
+            thread.start()
+            ready.wait(timeout=5)
+            loop = holder["loop"]
+            self._sync_loop = loop
+            self._sync_loop_thread = thread
+            return loop
 
     async def _execute_request(self, **kwargs: Any) -> TransportResult:
         maybe_result = self.transport.request(**kwargs)

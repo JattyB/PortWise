@@ -2,6 +2,28 @@
 
 ## Unreleased
 
+### H1-FIX - curl_cffi async transport teardown
+- Fixed curl_cffi shutdown races where async socket callbacks could fire after
+  their event loop closed. Sync `PoliteHttpClient` calls now run on a
+  client-owned background event loop instead of repeatedly creating loops with
+  `asyncio.run()`, keeping the shared `AsyncSession` and libcurl callbacks on
+  one loop until explicit shutdown.
+- Added explicit `PoliteHttpClient.close()` / `close_sync()` cleanup. Module
+  execution now injects one shared HTTP client per host work batch and closes it
+  after that host's sequential modules complete, enforcing session close before
+  loop teardown.
+- Checked current curl_cffi docs: `AsyncSession.close()` is async and releases
+  underlying resources, and `async with AsyncSession()` is the documented
+  lifecycle. Raised the dependency floor to `curl_cffi>=0.15.0`, the latest
+  installed and published version in this environment.
+- Validation: a full multi-target CLI scan over `scanme.nmap.org`,
+  `expired.badssl.com`, and `testaspnet.vulnweb.com` completed with no
+  `Event loop is closed`, `Exception ignored from cffi callback`, or
+  `RuntimeError: Event loop is closed` messages. A forced live HTTP/TLS module
+  run over the same target set exercised shared curl sessions across scanme,
+  expired.badssl, and testaspnet: 18 module results, 29 findings, zero teardown
+  messages.
+
 ### Phase H - TLS deepening and native ExploitDB
 - Deepened the native TLS path with optional full per-version cipher inventory
   (`tls.native_full_enumeration`) that records accepted cipher/protocol

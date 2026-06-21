@@ -11,6 +11,7 @@ from portwise.intelligence.false_positive import apply_category_rules, apply_fal
 from portwise.intelligence.risk_scoring import assign_priority
 from portwise.modules.registry import available_modules, module_targets_key
 from portwise.modules.results import ModuleResult
+from portwise.utils.http_client import client_from_config
 
 # Default bounded concurrency across hosts. Module checks are I/O-bound, so a
 # modest pool gives a large speedup without flooding any single host.
@@ -78,6 +79,8 @@ def execute_safe_modules(
         work,
         concurrency=concurrency,
         worker=worker,
+        config=config,
+        dry_run=dry_run,
         progress_callback=progress_callback,
         total_targets=total_targets,
     )
@@ -125,6 +128,8 @@ def _dispatch_by_host(
     *,
     concurrency: int,
     worker: Callable[[Any, dict[str, Any]], ModuleResult],
+    config: dict[str, Any] | None = None,
+    dry_run: bool = False,
     progress_callback: Any | None = None,
     total_targets: int = 0,
 ) -> dict[int, ModuleResult]:
@@ -149,16 +154,51 @@ def _dispatch_by_host(
 
     def process_host(items: list[tuple[int, Any, dict[str, Any]]]) -> dict[int, ModuleResult]:
         local: dict[int, ModuleResult] = {}
-        for work_id, module, target_dict in items:
-            result = worker(module, target_dict)
-            local[work_id] = result
-            if progress_callback:
-                with lock:
-                    progress["completed"] += 1
-                    progress["findings"] += len(result.findings)
-                    completed = progress["completed"]
-                    found = progress["findings"]
-                progress_callback(module.name, completed, total_targets, found, completed, total_targets)
+        if dry_run or config is None:
+            for work_id, module, target_dict in items:
+                result = worker(module, target_dict)
+                local[work_id] = result
+                if progress_callback:
+                    with lock:
+                        progress["completed"] += 1
+                        progress["findings"] += len(result.findings)
+                        completed = progress["completed"]
+                        found = progress["findings"]
+                    progress_callback(module.name, completed, total_targets, found, completed, total_targets)
+            return local
+
+        run_context = str(config.get("context", "unknown"))
+        run_internet_facing = bool(config.get("internet_facing", False))
+        shared_client: Any | None = None
+
+        def shared_client_factory() -> Any:
+            nonlocal shared_client
+            if shared_client is None:
+                shared_client = client_from_config(config)
+            return shared_client
+
+        shared_config = {**config, "_shared_http_client_factory": shared_client_factory}
+        try:
+            for work_id, module, target_dict in items:
+                result = _execute_one(
+                    module,
+                    target_dict,
+                    shared_config,
+                    dry_run,
+                    context=run_context,
+                    internet_facing=run_internet_facing,
+                )
+                local[work_id] = result
+                if progress_callback:
+                    with lock:
+                        progress["completed"] += 1
+                        progress["findings"] += len(result.findings)
+                        completed = progress["completed"]
+                        found = progress["findings"]
+                    progress_callback(module.name, completed, total_targets, found, completed, total_targets)
+        finally:
+            if shared_client is not None:
+                shared_client.close_sync()
         return local
 
     effective = max(1, min(concurrency, len(by_host)))

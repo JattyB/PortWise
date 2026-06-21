@@ -3,7 +3,7 @@ from __future__ import annotations
 import ftplib
 import socket
 import struct
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from portwise.core.models import Confidence, Evidence, Finding, FindingCategory, Severity
 from portwise.intelligence.default_creds import lookup_default_creds
@@ -22,7 +22,23 @@ from portwise.scanners.nse import (
 )
 from portwise.scanners.smb_native import probe_smb
 from portwise.scanners.ssh_algos import enumerate_ssh_algorithms
-from portwise.utils.http_client import PoliteHttpClient, client_from_config
+from portwise.utils.http_client import client_from_config
+
+if TYPE_CHECKING:
+    from portwise.utils.http_client import PoliteHttpClient
+
+
+def _shared_http_client(config: dict[str, Any]) -> PoliteHttpClient:
+    client = config.get("_shared_http_client")
+    if client is not None:
+        return client
+    factory = config.get("_shared_http_client_factory")
+    if callable(factory):
+        client = factory()
+        config["_shared_http_client"] = client
+        return client
+    return client_from_config(config)
+
 
 def available_modules() -> list[PortWiseModule]:
     return [
@@ -184,7 +200,7 @@ class TlsModule(PortWiseModule):
             scripts=dict(target.get("scripts") or {}),
             hostname=hostname,
         )
-        tls_client = client_from_config(config)
+        tls_client = _shared_http_client(config)
         if hostname:
             tls_client.vhost = hostname
             tls_client.sni = hostname
@@ -221,7 +237,7 @@ class HttpModule(PortWiseModule):
             scripts=dict(target.get("scripts") or {}),
             hostname=hostname,
         )
-        http_client = client_from_config(config)
+        http_client = _shared_http_client(config)
         if hostname:
             # Send Host: <vhost> and use it as SNI so name-based / fronted vhosts
             # are tested instead of the bare IP.
@@ -423,7 +439,7 @@ class FtpSafeModule(PortWiseModule):
         nse_anon = nse_ftp_anon(target)
         native_anon = False
         if bool(config.get("ftp_anonymous_check", True)):
-            client = client_from_config(config)
+            client = _shared_http_client(config)
             host = str(target["host"])
             if not client.is_tripped(host):
                 client.throttle(host)
@@ -465,7 +481,7 @@ class SshSafeModule(PortWiseModule):
         algos = nse_ssh_algos(target)
         algo_source = "Nmap ssh2-enum-algos"
         if not algos and bool(config.get("ssh_algo_probe", True)):
-            client = client_from_config(config)
+            client = _shared_http_client(config)
             host = str(target["host"])
             if not client.is_tripped(host):
                 client.throttle(host)
@@ -514,7 +530,7 @@ class SmbSafeModule(PortWiseModule):
         # read-only SMB NEGOTIATE handshake to determine SMBv1 support + signing.
         native_smb = None
         if not smb_sec.get("smbv1") and not smb_sec.get("signing") and bool(config.get("smb_native_probe", True)):
-            client = client_from_config(config)
+            client = _shared_http_client(config)
             host = str(target["host"])
             if not client.is_tripped(host):
                 client.throttle(host)
@@ -588,7 +604,7 @@ class WinRmSafeModule(PortWiseModule):
         severity = Severity.HIGH if port == 5985 else Severity.MEDIUM
         findings = [_simple_finding(self.name, target, "WinRM Exposed", severity, "WinRM management endpoint is reachable.", confidence=Confidence.INFORMATIONAL, category=FindingCategory.INFORMATION)]
 
-        client = client_from_config(config)
+        client = _shared_http_client(config)
         host = str(target["host"])
         tls = port == 5986
         if not client.is_tripped(host):
@@ -641,7 +657,7 @@ class SnmpSafeModule(PortWiseModule):
             findings.append(_simple_finding(self.name, target, "SNMP System Information Disclosure", Severity.LOW, f"SNMP NSE script disclosed system metadata: {details or raw[:200]}.", strength=5, confidence=Confidence.CONFIRMED, manual=False, category=FindingCategory.INFORMATION))
 
         if bool(snmp_config.get("default_community_check", config.get("snmp_default_community_check", True))):
-            client = client_from_config(config)
+            client = _shared_http_client(config)
             host = str(target["host"])
             for community in communities[:5]:
                 if client.is_tripped(host):
@@ -667,7 +683,7 @@ class SnmpSafeModule(PortWiseModule):
         write_enabled = bool(snmp_config.get("write_check", config.get("snmp_write_check", False)))
         depth_full = str(config.get("validation_level", "recon")) == "full"
         if write_enabled and depth_full:
-            client = client_from_config(config)
+            client = _shared_http_client(config)
             host = str(target["host"])
             for community in communities[:5]:
                 if client.is_tripped(host):
@@ -696,7 +712,7 @@ class DnsSafeModule(PortWiseModule):
         dns_config = config.get("dns", {}) if isinstance(config.get("dns"), dict) else {}
         findings = [_simple_finding(self.name, target, "DNS Service Exposed", Severity.LOW, "DNS service is reachable.", confidence=Confidence.INFORMATIONAL, category=FindingCategory.INFORMATION)]
         timeout = _timeout(config, "dns", 3.0)
-        client = client_from_config(config)
+        client = _shared_http_client(config)
         host = str(target["host"])
         port = int(target["port"])
         nse_recursion = nse_dns_recursion(target)
@@ -741,7 +757,7 @@ class NtpSafeModule(PortWiseModule):
 
     def run(self, target: dict[str, Any], config: dict[str, Any]) -> ModuleResult:
         findings = [_simple_finding(self.name, target, "NTP Service Exposed", Severity.LOW, "NTP service is reachable.", confidence=Confidence.INFORMATIONAL, category=FindingCategory.INFORMATION)]
-        client = client_from_config(config)
+        client = _shared_http_client(config)
         host = str(target["host"])
         port = int(target["port"])
         timeout = _timeout(config, "ntp", 3.0)
@@ -789,7 +805,7 @@ class DatabaseSafeModule(PortWiseModule):
             severity = Severity.HIGH
         findings = [_simple_finding(self.name, target, title, severity, "Database service is reachable; no data was queried or dumped.", confidence=Confidence.INFORMATIONAL, category=FindingCategory.INFORMATION)]
         if bool((config.get("database", {}) if isinstance(config.get("database"), dict) else {}).get("unauthenticated_checks", True)):
-            client = client_from_config(config)
+            client = _shared_http_client(config)
             findings.extend(_database_safe_probe(self.name, target, config, text, client=client))
         if target.get("version"):
             findings.append(_simple_finding(self.name, target, "Database Version Disclosure", Severity.LOW, "Database product/version is visible in service fingerprint.", category=FindingCategory.VULNERABILITY))
@@ -806,7 +822,7 @@ class DevOpsAdminModule(PortWiseModule):
 
     def run(self, target: dict[str, Any], config: dict[str, Any]) -> ModuleResult:
         findings = [_simple_finding(self.name, target, "DevOps/Admin Panel Exposed", Severity.MEDIUM, "Administrative or DevOps service fingerprint is reachable.", confidence=Confidence.INFORMATIONAL, category=FindingCategory.INFORMATION)]
-        client = client_from_config(config)
+        client = _shared_http_client(config)
         text = target_text(target)
         probe = _safe_http_fingerprint(target, config, ["/", "/login", "/-/readiness", "/api/v4/version", "/service/rest/v1/status", "/api/health", "/-/health"], client=client)
         if probe:
@@ -848,7 +864,7 @@ class KubernetesContainerModule(PortWiseModule):
             title = "Kubernetes API Exposed"
             paths = ["/version", "/readyz", "/healthz"]
         finding = _simple_finding(self.name, target, title, Severity.HIGH, "Container management interface is reachable. Only safe metadata endpoints are in scope.", confidence=Confidence.INFORMATIONAL, category=FindingCategory.INFORMATION)
-        client = client_from_config(config)
+        client = _shared_http_client(config)
         findings = [finding]
         probe = _safe_http_fingerprint(target, config, paths, client=client)
         if probe:
@@ -874,7 +890,7 @@ class MailSafeModule(PortWiseModule):
     def run(self, target: dict[str, Any], config: dict[str, Any]) -> ModuleResult:
         text = target_text(target)
         findings: list[Finding] = []
-        client = client_from_config(config)
+        client = _shared_http_client(config)
         host = str(target["host"])
         if "smtp" in text or int(target.get("port", 0)) in {25, 465, 587}:
             findings.append(_simple_finding(self.name, target, "SMTP Service Exposed", Severity.LOW, "SMTP service is reachable; no mail sending was performed.", confidence=Confidence.INFORMATIONAL, category=FindingCategory.INFORMATION))
@@ -931,7 +947,7 @@ class VpnApplianceModule(PortWiseModule):
 
         # Probe known SSL-VPN / appliance login portals to confirm the product and
         # surface the exposed remote-access entry point. Read-only GETs; no exploits.
-        client = client_from_config(config)
+        client = _shared_http_client(config)
         context = str(config.get("context", "unknown"))
         internet = bool(config.get("internet_facing", False))
         portal_sev = Severity.HIGH if (context == "external" or internet) else Severity.MEDIUM
@@ -1304,7 +1320,7 @@ def _mongodb_ping(host: str, port: int, timeout: float) -> bool:
 
 def _database_safe_probe(module: str, target: dict[str, Any], config: dict[str, Any], text: str, *, client: PoliteHttpClient | None = None) -> list[Finding]:
     if client is None:
-        client = client_from_config(config)
+        client = _shared_http_client(config)
     host = str(target["host"])
     port = int(target["port"])
     timeout = _timeout(config, "database", 4.0)
@@ -1359,7 +1375,7 @@ def _database_safe_probe(module: str, target: dict[str, Any], config: dict[str, 
 
 def _safe_http_fingerprint(target: dict[str, Any], config: dict[str, Any], paths: list[str], *, client: PoliteHttpClient | None = None) -> tuple[int, str, str, str] | None:
     if client is None:
-        client = client_from_config(config)
+        client = _shared_http_client(config)
     host = str(target["host"])
     port = int(target["port"])
     timeout = _timeout(config, default=4.0)

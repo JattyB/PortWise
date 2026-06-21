@@ -11,7 +11,23 @@ opt-in per engagement). That is standard scope control, not a limitation.
 This roadmap drives PortWise to professional-grade PT capability. Phases are
 implemented in order, one commit per phase, tests green throughout.
 
-**Status: Phases 0-7 complete; native rebuild Phases A-H complete.** 387 tests passing.
+**Status: Phases 0-7 complete; native rebuild Phases A-H complete; H1 transport teardown fixed.** 389 tests passing.
+
+## H1-FIX - curl_cffi async transport teardown
+
+**Goal:** eliminate curl_cffi async socket callback errors during shutdown.
+
+- Sync `PoliteHttpClient` requests now use a client-owned background event loop
+  instead of repeated `asyncio.run()` calls. The shared curl_cffi `AsyncSession`
+  stays bound to one loop for that client lifecycle.
+- Module execution injects one shared HTTP client per host batch and explicitly
+  closes it after the host's sequential modules complete. Shutdown order is now
+  close session, let callbacks settle, then stop and close the loop.
+- Dependency floor is `curl_cffi>=0.15.0`; Context7 confirms the current async
+  cleanup API is `await AsyncSession.close()` / `async with AsyncSession()`.
+- Live validation over scanme, expired.badssl, and testaspnet completed with no
+  `Event loop is closed` or curl_cffi callback teardown messages; explicit
+  HTTP/TLS module execution produced 18 module results and 29 findings.
 
 ## Native rebuild Phase H - TLS deepening and native ExploitDB
 

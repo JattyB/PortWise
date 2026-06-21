@@ -256,6 +256,23 @@ def test_request_url_parses_full_url():
     assert call["headers"] == {"X-Test": "1"}
 
 
+def test_sync_requests_reuse_client_owned_event_loop_and_close():
+    transport = _FakeTransport([_ok_result(), _ok_result()])
+    client = PoliteHttpClient(_fast_config(), transport=transport)  # type: ignore[arg-type]
+
+    client.request("host.test", 80, "GET", "/a", False)
+    first_loop = client._sync_loop
+    client.request("host.test", 80, "GET", "/b", False)
+
+    assert first_loop is not None
+    assert client._sync_loop is first_loop
+    assert len(transport.calls) == 2
+
+    client.close_sync()
+    assert client._sync_loop is None
+    assert client._sync_loop_thread is None
+
+
 def test_async_request_interface():
     client = PoliteHttpClient(_fast_config(), transport=_FakeTransport())  # type: ignore[arg-type]
 
