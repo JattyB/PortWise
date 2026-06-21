@@ -12,6 +12,7 @@ ROUTE_KEYS = (
     "http_targets",
     "tls_targets",
     "smb_targets",
+    "ldap_targets",
     "ssh_targets",
     "rdp_targets",
     "winrm_targets",
@@ -82,6 +83,7 @@ def write_target_files(routes: dict[str, list[ModuleTarget]], output_root: Path)
         "http_targets": routes.get("http_targets", []),
         "tls_targets": routes.get("tls_targets", []),
         "smb_targets": routes.get("smb_targets", []),
+        "ldap_targets": routes.get("ldap_targets", []),
         "database_targets": routes.get("database_targets", []),
         "exposure_targets": _exposure_targets(routes),
         "all_services": _all_targets(routes),
@@ -107,6 +109,7 @@ def _route_service(service: Service, tls_engine: TlsEngine | None) -> list[tuple
     _add_if(routes, "http_targets", any(hint in text for hint in HTTP_HINTS) or web_port, "HTTP/web fingerprint or common web port matched.")
     _add_if(routes, "tls_targets", _is_tls(service, text, tls_engine) or (tcp and port in HTTPS_PORTS), "TLS tunnel/fingerprint/handshake or HTTPS port matched.")
     _add_if(routes, "smb_targets", any(hint in text for hint in ("microsoft-ds", "netbios-ssn", "smb", "samba")) or service.port in {139, 445}, "SMB fingerprint or fallback port matched.")
+    _add_if(routes, "ldap_targets", any(hint in text for hint in ("ldap", "active directory", "domain controller")) or (tcp and service.port in {389, 636, 3268, 3269}), "LDAP/AD fingerprint or fallback port matched.")
     _add_if(routes, "ssh_targets", "ssh" in text or port == 22, "SSH fingerprint or port 22 matched.")
     _add_if(routes, "rdp_targets", any(hint in text for hint in ("ms-wbt-server", "rdp", "terminal service")) or service.port == 3389, "RDP fingerprint or fallback port matched.")
     _add_if(routes, "winrm_targets", "winrm" in text or service.port in {5985, 5986}, "WinRM fingerprint or fallback port matched.")

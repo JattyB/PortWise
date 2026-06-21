@@ -2,6 +2,29 @@
 
 ## Unreleased
 
+### Phase J - AD / SMB / auth via impacket
+- Added `impacket>=0.13.0` as a bundled dependency for AD/SMB capability. SMB
+  authentication no longer shells out to `nxc`/`netexec`; the authenticated SMB
+  path uses impacket `SMBConnection` directly and remains gated by the existing
+  `authenticated: true` / `--authenticated` full-depth opt-in.
+- Added impacket-backed SMB enumeration helpers for null-session checks, share
+  enumeration, signing posture, dialect, OS, domain, and server metadata. The
+  existing native SMB NEGOTIATE probe still covers fast SMBv1/signing overlap.
+- Added LDAP target routing and an LDAP module for impacket anonymous-bind
+  enumeration of users, groups, computers, domain metadata, SPN-bearing
+  accounts, and no-preauth accounts when the directory permits anonymous reads.
+- Added credentialed Kerberoast and AS-REP roast request construction through
+  impacket helpers. Evidence records request metadata only; supplied passwords
+  are redacted and never written to findings.
+- Fixture validation: SMB null session/share/signing/OS/domain parsing, LDAP
+  anonymous object parsing, Kerberoast request construction, AS-REP request
+  construction, and must-not-emit controls all pass: TP=6 FP=0 FN=0,
+  precision=1.000, recall=1.000.
+- Live validation: public validation targets exposed no SMB. Localhost TCP/445
+  was reachable, but Windows Defender blocked the local impacket user-site
+  import as potentially unwanted software, so live impacket enumeration failed
+  closed with no findings. Full suite: 396 passed.
+
 ### Phase I - Playwright screenshots
 - Replaced the optional gowitness screenshot path with native Playwright
   capture behind the `portwise[screenshots]` extra. Screenshot capture uses a

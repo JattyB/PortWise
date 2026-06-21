@@ -47,6 +47,7 @@ def available_modules() -> list[PortWiseModule]:
         TlsModule(),
         HttpModule(),
         SmbSafeModule(),
+        LdapSafeModule(),
         SshSafeModule(),
         RdpSafeModule(),
         WinRmSafeModule(),
@@ -73,6 +74,7 @@ def module_targets_key(module_name: str) -> str:
         "tls": "tls_targets",
         "http": "http_targets",
         "smb": "smb_targets",
+        "ldap": "ldap_targets",
         "ssh": "ssh_targets",
         "rdp": "rdp_targets",
         "winrm": "winrm_targets",
@@ -516,7 +518,7 @@ class SshSafeModule(PortWiseModule):
 
 class SmbSafeModule(PortWiseModule):
     name = "smb"
-    description = "SMB exposure and safe Nmap-script evidence parser."
+    description = "SMB exposure, native negotiate, and impacket session/share enumeration."
     supported_target_types = ("smb_targets",)
 
     def run(self, target: dict[str, Any], config: dict[str, Any]) -> ModuleResult:
@@ -561,7 +563,19 @@ class SmbSafeModule(PortWiseModule):
         elif "domain" in text or "workgroup" in text or "os:" in text:
             findings.append(_simple_finding(self.name, target, "SMB OS/Domain Disclosure", Severity.LOW, "SMB script evidence discloses OS or domain metadata.", strength=4, category=FindingCategory.INFORMATION))
 
+        findings.extend(_run_impacket_smb_enum(target, config))
         findings.extend(_run_smb_auth_checks(target, config))
+        return ModuleResult(self.name, target, findings=findings, evidence=[e for f in findings for e in f.evidence])
+
+
+class LdapSafeModule(PortWiseModule):
+    name = "ldap"
+    description = "LDAP/AD anonymous-bind enumeration through impacket."
+    supported_target_types = ("ldap_targets",)
+
+    def run(self, target: dict[str, Any], config: dict[str, Any]) -> ModuleResult:
+        findings = [_simple_finding(self.name, target, "LDAP Service Exposed", Severity.LOW, "LDAP is reachable and should be limited to trusted networks or protected with LDAPS/StartTLS.", confidence=Confidence.INFORMATIONAL, category=FindingCategory.INFORMATION)]
+        findings.extend(_run_impacket_ldap_enum(target, config))
         return ModuleResult(self.name, target, findings=findings, evidence=[e for f in findings for e in f.evidence])
 
 
@@ -1423,6 +1437,87 @@ def _run_web_auth_checks(target: dict[str, Any], config: dict[str, Any], client:
     for f in findings:
         f.module = "http"
     return findings
+
+
+def _run_impacket_smb_enum(target: dict[str, Any], config: dict[str, Any]) -> list[Finding]:
+    smb_cfg = config.get("smb", {}) if isinstance(config.get("smb"), dict) else {}
+    if not bool(smb_cfg.get("impacket_enum", config.get("smb_impacket_enum", False))):
+        return []
+    from portwise.scanners.ad_impacket import enumerate_smb
+
+    host = str(target["host"])
+    result = enumerate_smb(host, port=int(target.get("port", 445) or 445), timeout=_timeout(config, "smb", 5.0))
+    findings: list[Finding] = []
+    if result.null_session:
+        share_names = sorted(share.name for share in result.shares if share.name)
+        f = _simple_finding(
+            "smb", target, "SMB Null Session Accepted", Severity.MEDIUM,
+            f"Impacket established an anonymous SMB session. Enumerated {len(share_names)} share(s): {', '.join(share_names[:8]) or 'none'}.",
+            strength=5, confidence=Confidence.CONFIRMED, manual=False, category=FindingCategory.VULNERABILITY,
+        )
+        f.evidence[0].data.update({"engine": "impacket", "shares": share_names, "domain": result.domain, "server_name": result.server_name})
+        findings.append(f)
+    if result.shares:
+        share_names = sorted(share.name for share in result.shares if share.name)
+        f = _simple_finding(
+            "smb", target, "SMB Share Enumeration", Severity.LOW,
+            f"Impacket enumerated SMB shares: {', '.join(share_names[:12])}.",
+            strength=4, confidence=Confidence.CONFIRMED, manual=False, category=FindingCategory.INFORMATION,
+        )
+        f.evidence[0].data.update({"engine": "impacket", "shares": [{"name": share.name, "remark": share.remark, "type": share.share_type} for share in result.shares]})
+        findings.append(f)
+    if result.os or result.domain or result.server_name:
+        details = {k: v for k, v in {"os": result.os, "domain": result.domain, "server_name": result.server_name, "dialect": result.dialect, "signing": result.signing}.items() if v}
+        f = _simple_finding(
+            "smb", target, "SMB Impacket OS/Domain Enumeration", Severity.LOW,
+            "Impacket disclosed SMB server metadata: " + ", ".join(f"{k}={v}" for k, v in details.items()) + ".",
+            strength=4, confidence=Confidence.CONFIRMED, manual=False, category=FindingCategory.INFORMATION,
+        )
+        f.evidence[0].data.update({"engine": "impacket", **details})
+        findings.append(f)
+    return findings
+
+
+def _run_impacket_ldap_enum(target: dict[str, Any], config: dict[str, Any]) -> list[Finding]:
+    ldap_cfg = config.get("ldap", {}) if isinstance(config.get("ldap"), dict) else {}
+    if not bool(ldap_cfg.get("anonymous_enum", config.get("ldap_anonymous_enum", False))):
+        return []
+    from portwise.scanners.ad_impacket import enumerate_ldap_anonymous
+
+    port = int(target.get("port", 389) or 389)
+    use_ssl = port in {636, 3269} or "ldaps" in str(target.get("service", "")).lower()
+    result = enumerate_ldap_anonymous(
+        str(target["host"]),
+        port=port,
+        use_ssl=use_ssl,
+        base_dn=str(ldap_cfg.get("base_dn", "")),
+        timeout=_timeout(config, "ldap", 5.0),
+    )
+    if not result.anonymous_bind:
+        return []
+    counts = {
+        "users": len(result.users),
+        "groups": len(result.groups),
+        "computers": len(result.computers),
+        "spn_accounts": len(result.spn_accounts),
+        "asrep_roastable": len(result.asrep_roastable),
+    }
+    finding = _simple_finding(
+        "ldap", target, "LDAP Anonymous Bind Enumeration", Severity.MEDIUM,
+        "Impacket anonymous LDAP bind succeeded and enumerated directory objects: "
+        + ", ".join(f"{k}={v}" for k, v in counts.items()) + ".",
+        strength=5, confidence=Confidence.CONFIRMED, manual=False, category=FindingCategory.VULNERABILITY,
+    )
+    finding.evidence[0].data.update({
+        "engine": "impacket",
+        "base_dn": result.base_dn,
+        "domain_info": result.domain_info,
+        "counts": counts,
+        "sample_users": [obj.attributes for obj in result.users[:5]],
+        "sample_groups": [obj.attributes for obj in result.groups[:5]],
+        "sample_computers": [obj.attributes for obj in result.computers[:5]],
+    })
+    return [finding]
 
 
 def _run_smb_auth_checks(target: dict[str, Any], config: dict[str, Any]) -> list[Finding]:

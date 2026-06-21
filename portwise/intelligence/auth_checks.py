@@ -1,22 +1,26 @@
 """Authenticated checks (operator opt-in, full depth only).
 
-* **Web**: HTTP Basic auth and form login with operator-supplied credentials.
-* **SMB**: orchestrate netexec/smbclient with supplied credentials (ExternalTool),
-  graceful skip + handoff when neither binary is present.
-
-These never brute force: a single operator-supplied credential per service is
-tried, to confirm whether that credential grants access (e.g. validating known /
-default creds the operator chose to test under authorization).
+Only operator-supplied credentials are used. PortWise does not brute force or
+guess credentials; these checks validate explicitly provided access and construct
+read-only Kerberos requests through impacket.
 """
 from __future__ import annotations
 
 import base64
-from typing import Any
 from urllib.parse import urlencode
 
-from portwise.core.external_tool import ExternalTool
 from portwise.core.models import Confidence, Evidence, Finding, FindingCategory, Severity
 from portwise.intelligence.credentials import Credential
+from portwise.scanners.ad_impacket import (
+    KerberosRequester,
+    LdapObject,
+    SmbConnectionFactory,
+    authenticated_smb_access,
+    construct_asrep_roast_requests,
+    construct_kerberoast_requests,
+    request_asrep_with_impacket,
+    request_tgs_with_impacket,
+)
 from portwise.utils.http_client import PoliteHttpClient
 
 
@@ -37,8 +41,7 @@ def web_basic_auth(
     client: PoliteHttpClient, host: str, port: int, tls: bool, cred: Credential,
     *, path: str = "/", timeout: float = 6.0,
 ) -> bool:
-    """Return True when supplied Basic credentials are accepted (was 401 without,
-    is 2xx/3xx with)."""
+    """Return True when supplied Basic credentials are accepted."""
     token = base64.b64encode(f"{cred.username}:{cred.password}".encode()).decode()
     try:
         no_auth = client.request(host, port, "GET", path, tls, timeout)
@@ -53,8 +56,7 @@ def web_form_login(
     client: PoliteHttpClient, host: str, port: int, tls: bool, cred: Credential,
     *, timeout: float = 6.0,
 ) -> bool:
-    """Attempt a single form login; heuristically return True when a session
-    appears to be established (auth cookie set, or redirect away from the form)."""
+    """Attempt a single form login and return True when a session appears active."""
     login_url = cred.login_url or "/login"
     payload = urlencode({
         cred.username_field: cred.username,
@@ -83,7 +85,7 @@ def run_web_auth(
     for cred in creds:
         if web_basic_auth(client, host, port, tls, cred, timeout=timeout):
             findings.append(_auth_finding(
-                "Authenticated Access — HTTP Basic Credentials Accepted", Severity.HIGH,
+                "Authenticated Access - HTTP Basic Credentials Accepted", Severity.HIGH,
                 host, port,
                 f"Supplied HTTP Basic credentials ({cred.redacted()}) were accepted by the web service.",
                 evidence_data={"method": "basic", "user": cred.username},
@@ -91,7 +93,7 @@ def run_web_auth(
             continue
         if cred.password and web_form_login(client, host, port, tls, cred, timeout=timeout):
             findings.append(_auth_finding(
-                "Authenticated Access — Web Form Login Succeeded", Severity.MEDIUM,
+                "Authenticated Access - Web Form Login Succeeded", Severity.MEDIUM,
                 host, port,
                 f"Supplied credentials ({cred.redacted()}) appear to establish an authenticated session via form login at {cred.login_url or '/login'}.",
                 confidence=Confidence.LIKELY, strength=4,
@@ -101,41 +103,64 @@ def run_web_auth(
 
 
 def run_smb_auth(
-    host: str, creds: list[Credential], *, tool: ExternalTool | None = None,
+    host: str,
+    creds: list[Credential],
+    *,
+    conn_factory: SmbConnectionFactory | None = None,
+    spn_accounts: list[LdapObject] | None = None,
+    asrep_accounts: list[LdapObject] | None = None,
+    kdc_host: str = "",
+    tgs_requester: KerberosRequester | None = None,
+    asrep_requester: KerberosRequester | None = None,
 ) -> tuple[list[Finding], list[str]]:
-    """Authenticated SMB via netexec (preferred) or smbclient, orchestrated through
-    ExternalTool. Returns (findings, notes)."""
+    """Authenticated SMB/AD checks through impacket. Returns (findings, notes)."""
     findings: list[Finding] = []
     notes: list[str] = []
+    tgs_requester = tgs_requester or request_tgs_with_impacket
+    asrep_requester = asrep_requester or request_asrep_with_impacket
     for cred in creds:
-        nxc = tool or ExternalTool("nxc", binary="nxc", timeout=60)
-        user = f"{cred.domain}\\{cred.username}" if cred.domain else cred.username
-        handoff = f"nxc smb {host} -u '{cred.username}' -p '<redacted>' --shares"
-        if not nxc.available:
-            # Try classic netexec/crackmapexec name, then fall back to handoff.
-            alt = ExternalTool("netexec", binary="netexec", timeout=60)
-            if alt.available:
-                nxc = alt
-            else:
-                notes.append(f"smb-auth: nxc/netexec not installed; skipped — handoff: {handoff}")
-                continue
-        args = ["smb", host, "-u", cred.username, "-p", cred.password, "--shares"]
-        if cred.domain:
-            args += ["-d", cred.domain]
-        result = nxc.run(args, handoff_command=handoff)
-        if not result.ran:
-            notes.append(result.note())
-            continue
-        out = (result.stdout + " " + result.stderr)
-        if "Pwn3d!" in out or "[+]" in out:
-            sev = Severity.CRITICAL if "Pwn3d!" in out else Severity.HIGH
+        result = authenticated_smb_access(host, cred, conn_factory=conn_factory)
+        if result.accepted:
+            share_names = sorted(share.name for share in result.shares if share.name)
+            sev = Severity.CRITICAL if result.admin else Severity.HIGH
             findings.append(_auth_finding(
-                "Authenticated Access — SMB Login Succeeded", sev, host, 445,
+                "Authenticated Access - SMB Login Succeeded", sev, host, 445,
                 f"Supplied SMB credentials ({cred.redacted()}) authenticated successfully"
-                + (" with administrative access (Pwn3d!)." if "Pwn3d!" in out else "."),
-                evidence_data={"method": "smb", "user": cred.username, "admin": "Pwn3d!" in out},
+                + (" and exposed administrative shares." if result.admin else "."),
+                evidence_data={"method": "smb", "user": cred.username, "domain": cred.domain, "admin": result.admin, "shares": share_names},
             ))
-            notes.append(f"smb-auth: session established for {cred.redacted()}")
+            notes.append(f"smb-auth: impacket session established for {cred.redacted()}")
         else:
-            notes.append(f"smb-auth: credentials not accepted for {cred.redacted()}")
+            notes.append(f"smb-auth: credentials not accepted for {cred.redacted()}" + (f" ({result.error})" if result.error else ""))
+
+        if spn_accounts:
+            roast = construct_kerberoast_requests(cred, spn_accounts, kdc_host=kdc_host, requester=tgs_requester)
+            if roast.requests:
+                findings.append(_auth_finding(
+                    "Kerberoast Request Constructed - SPN Accounts", Severity.MEDIUM, host, 88,
+                    f"Constructed {len(roast.requests)} Kerberoast TGS request(s) through impacket for SPN-bearing account(s) using {cred.redacted()}.",
+                    confidence=Confidence.LIKELY,
+                    strength=4,
+                    evidence_data={
+                        "method": "kerberoast",
+                        "request_count": len(roast.requests),
+                        "targets": [{"account": r.username, "spn": r.target, "domain": r.domain, "kdc_host": r.kdc_host} for r in roast.requests],
+                        "errors": roast.errors,
+                    },
+                ))
+        if asrep_accounts:
+            roast = construct_asrep_roast_requests(cred, asrep_accounts, kdc_host=kdc_host, requester=asrep_requester)
+            if roast.requests:
+                findings.append(_auth_finding(
+                    "AS-REP Roast Request Constructed - Preauth Disabled", Severity.MEDIUM, host, 88,
+                    f"Constructed {len(roast.requests)} AS-REP request(s) through impacket for account(s) without Kerberos pre-authentication using {cred.redacted()}.",
+                    confidence=Confidence.LIKELY,
+                    strength=4,
+                    evidence_data={
+                        "method": "asrep-roast",
+                        "request_count": len(roast.requests),
+                        "targets": [{"account": r.username, "domain": r.domain, "kdc_host": r.kdc_host} for r in roast.requests],
+                        "errors": roast.errors,
+                    },
+                ))
     return findings, notes

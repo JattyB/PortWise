@@ -62,6 +62,19 @@ scanner:
   ssh_algo_probe: true
   smb_native_probe: true
 
+smb:
+  # Unauthenticated SMB session/share/metadata enumeration through impacket.
+  # This complements the native SMB NEGOTIATE probe; no credentials are sent.
+  impacket_enum: true
+  timeout: 5
+
+ldap:
+  # Anonymous LDAP bind/object enumeration through impacket where the directory
+  # permits it. Credentials are never used unless authenticated: true.
+  anonymous_enum: true
+  timeout: 5
+  base_dn: ""
+
 http_politeness:
   min_delay_seconds: 0.5
   jitter_seconds: [0.1, 0.4]
@@ -230,7 +243,7 @@ credentials: []
   #   login_url: /login
   #   username_field: username
   #   password_field: password
-  # - service: smb          # authenticated SMB via nxc/netexec (orchestrated)
+  # - service: smb          # authenticated SMB/AD checks via impacket
   #   username: svc_account
   #   password: "REDACTED"
   #   domain: CORP
@@ -256,6 +269,7 @@ profiles:
       exposure: true
       plaintext: true
       smb_safe: false
+      ldap: false
       ssh: true
       rdp: true
       winrm: true
@@ -289,6 +303,7 @@ profiles:
       exposure: true
       plaintext: true
       smb_safe: true
+      ldap: true
       ssh: true
       rdp: true
       winrm: true
@@ -321,6 +336,7 @@ profiles:
       exposure: true
       plaintext: true
       smb_safe: false
+      ldap: false
       ssh: true
       rdp: true
       winrm: true
@@ -360,6 +376,7 @@ profiles:
       tls: true
       http: true
       smb_safe: true
+      ldap: true
       ssh: true
       rdp: true
       winrm: true

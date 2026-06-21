@@ -11,7 +11,29 @@ opt-in per engagement). That is standard scope control, not a limitation.
 This roadmap drives PortWise to professional-grade PT capability. Phases are
 implemented in order, one commit per phase, tests green throughout.
 
-**Status: Phases 0-7 complete; native rebuild Phases A-I complete.** 390 tests passing.
+**Status: Phases 0-7 complete; native rebuild Phases A-J complete.** 396 tests passing.
+
+## Native rebuild Phase J - AD / SMB / auth via impacket
+
+**Goal:** native AD/SMB assessment using bundled impacket, with credentialed
+actions opt-in and off by default.
+
+- `impacket>=0.13.0` is now a core dependency. SMB authentication uses
+  impacket directly; `nxc`/`netexec` are no longer required for capability.
+- SMB checks now combine the existing native SMB NEGOTIATE probe with optional
+  impacket null-session/share/OS/domain/signing enumeration.
+- LDAP routing and an LDAP module enumerate anonymous-bind users, groups,
+  computers, domain metadata, SPN accounts, and no-preauth accounts where the
+  directory permits anonymous reads.
+- Authenticated full-depth checks use supplied SMB credentials for share access
+  and Kerberos roast request construction. Evidence contains request metadata
+  only and redacts supplied secrets.
+- Fixture validation: TP=6 FP=0 FN=0, precision=1.000, recall=1.000 across SMB
+  enumeration, LDAP enumeration, Kerberoast construction, AS-REP construction,
+  and must-not-emit controls.
+- Live validation: public targets exposed no SMB. Localhost TCP/445 was
+  reachable, but Windows Defender blocked the local impacket user-site import;
+  the live impacket enum failed closed with zero findings.
 
 ## Native rebuild Phase I - Playwright screenshots
 

@@ -6,7 +6,8 @@ for authorized assessments.
 PortWise is the brain that ties best-in-class scanners and native protocol
 checks into one prioritized report: it discovers services, runs native
 protocol-level validation, orchestrates optional engines (nuclei, ffuf,
-Playwright screenshots, masscan, testssl), correlates and de-duplicates findings, maps
+Playwright screenshots, masscan, testssl), adds bundled impacket AD/SMB depth,
+correlates and de-duplicates findings, maps
 version-matched CVEs, captures evidence/POCs, and generates JSON, HTML, and
 Excel reports suitable for client delivery.
 
@@ -32,6 +33,9 @@ It answers, with a visible evidence chain:
 
 - **Native** protocol-level checks (SSH KEX, SMB negotiate, TLS handshake, HTTP
   fingerprint, banner grab) — dependency-free.
+- **Bundled** AD/SMB depth through impacket: SMB null-session/share metadata,
+  LDAP anonymous enumeration where allowed, and opt-in credentialed SMB/Kerberos
+  checks without requiring nxc/netexec.
 - **Orchestrated** heavy/fast-moving engines (nuclei, ffuf, testssl, masscan,
   nmap) as **optional** integrations: detect the binary on PATH, run it, parse
   its JSON output into PortWise `Finding` objects; if absent, skip with a note

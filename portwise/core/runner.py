@@ -509,7 +509,7 @@ def _module_config(config: PortWiseConfig, profile: Profile, *, internet_facing:
     modules = dict(config.project.get("modules", {}))
     sections = {
         key: config.raw.get(key, {})
-        for key in ("http", "tls", "dns", "snmp", "ntp", "database", "mail", "cve", "imports", "safety", "cache")
+        for key in ("http", "tls", "dns", "snmp", "ntp", "database", "smb", "ldap", "mail", "cve", "imports", "safety", "cache")
         if isinstance(config.raw.get(key), dict)
     }
     merged = {**scanner, **modules, **sections}
@@ -529,6 +529,7 @@ def _enabled_modules(profile: Profile) -> dict[str, bool]:
     raw = dict(profile.modules)
     aliases = {
         "smb_safe": "smb",
+        "ldap": "ldap",
         "confidence_scoring": "",
         "false_positive_scoring": "",
         "cve_enrichment": "",
