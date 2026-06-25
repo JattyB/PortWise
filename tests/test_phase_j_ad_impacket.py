@@ -132,6 +132,17 @@ def test_ldap_module_emits_anonymous_enum_and_control_does_not_emit(monkeypatch)
     assert not any(f.title == "LDAP Anonymous Bind Enumeration" for f in control.findings)
 
 
+def test_impacket_load_failure_surfaces_clear_note(monkeypatch):
+    target = {"host": "dc01.corp.local", "port": 445, "protocol": "tcp", "service": "microsoft-ds", "scripts": {}}
+    monkeypatch.setattr("portwise.scanners.ad_impacket.impacket_load_error", lambda: "blocked by defender")
+    result = SmbSafeModule().run(target, {"smb": {"impacket_enum": True}, "smb_native_probe": False})
+    assert any(
+        finding.title == "AD/SMB checks unavailable: impacket could not load (blocked or not importable)"
+        for finding in result.findings
+    )
+    assert result.findings
+
+
 def test_kerberoast_and_asrep_request_construction_redacts_secret():
     cred = Credential(service="smb", username="auditor", password="SuperSecret!", domain="CORP")
     spn = [LdapObject("CN=svc-sql", "user", {"sAMAccountName": "svc-sql", "servicePrincipalName": ["MSSQLSvc/sql.corp.local:1433"]})]

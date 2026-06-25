@@ -1062,6 +1062,24 @@ def _simple_finding(
     )
 
 
+def _impacket_unavailable_finding(module: str, target: dict[str, Any], surface: str) -> Finding:
+    from portwise.scanners.ad_impacket import IMPACKET_UNAVAILABLE_NOTE, impacket_load_error
+
+    detail = impacket_load_error()
+    description = IMPACKET_UNAVAILABLE_NOTE if not detail else f"{IMPACKET_UNAVAILABLE_NOTE}: {detail}"
+    return _simple_finding(
+        module,
+        target,
+        IMPACKET_UNAVAILABLE_NOTE,
+        Severity.INFO,
+        f"{surface}: {description}.",
+        strength=1,
+        confidence=Confidence.INFORMATIONAL,
+        manual=False,
+        category=FindingCategory.INFORMATION,
+    )
+
+
 def _probe_transcript_evidence(source: str, description: str, probe: str, target_str: str, response: str, strength: int = 5) -> Evidence:
     """Build a transcript-like Evidence for non-HTTP probe results (PT5 Step 3)."""
     from datetime import datetime, timezone
@@ -1443,11 +1461,13 @@ def _run_impacket_smb_enum(target: dict[str, Any], config: dict[str, Any]) -> li
     smb_cfg = config.get("smb", {}) if isinstance(config.get("smb"), dict) else {}
     if not bool(smb_cfg.get("impacket_enum", config.get("smb_impacket_enum", False))):
         return []
-    from portwise.scanners.ad_impacket import enumerate_smb
+    from portwise.scanners.ad_impacket import IMPACKET_UNAVAILABLE_NOTE, enumerate_smb
 
     host = str(target["host"])
     result = enumerate_smb(host, port=int(target.get("port", 445) or 445), timeout=_timeout(config, "smb", 5.0))
     findings: list[Finding] = []
+    if result.error.startswith(IMPACKET_UNAVAILABLE_NOTE):
+        return [_impacket_unavailable_finding("smb", target, "SMB enumeration")]
     if result.null_session:
         share_names = sorted(share.name for share in result.shares if share.name)
         f = _simple_finding(
@@ -1482,7 +1502,7 @@ def _run_impacket_ldap_enum(target: dict[str, Any], config: dict[str, Any]) -> l
     ldap_cfg = config.get("ldap", {}) if isinstance(config.get("ldap"), dict) else {}
     if not bool(ldap_cfg.get("anonymous_enum", config.get("ldap_anonymous_enum", False))):
         return []
-    from portwise.scanners.ad_impacket import enumerate_ldap_anonymous
+    from portwise.scanners.ad_impacket import IMPACKET_UNAVAILABLE_NOTE, enumerate_ldap_anonymous
 
     port = int(target.get("port", 389) or 389)
     use_ssl = port in {636, 3269} or "ldaps" in str(target.get("service", "")).lower()
@@ -1493,6 +1513,8 @@ def _run_impacket_ldap_enum(target: dict[str, Any], config: dict[str, Any]) -> l
         base_dn=str(ldap_cfg.get("base_dn", "")),
         timeout=_timeout(config, "ldap", 5.0),
     )
+    if result.error.startswith(IMPACKET_UNAVAILABLE_NOTE):
+        return [_impacket_unavailable_finding("ldap", target, "LDAP enumeration")]
     if not result.anonymous_bind:
         return []
     counts = {
@@ -1528,7 +1550,9 @@ def _run_smb_auth_checks(target: dict[str, Any], config: dict[str, Any]) -> list
     creds = credentials_for(config, "smb")
     if not creds:
         return []
-    findings, _notes = run_smb_auth(str(target["host"]), creds)
+    findings, notes = run_smb_auth(str(target["host"]), creds)
+    if any(note.startswith("AD/SMB checks unavailable: impacket could not load (blocked or not importable)") for note in notes):
+        findings.append(_impacket_unavailable_finding("smb", target, "Authenticated SMB/AD checks"))
     for f in findings:
         f.module = "smb"
     return findings

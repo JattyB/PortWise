@@ -25,6 +25,11 @@ scanner:
   tcp_syn_scan_when_privileged: true
   tcp_top_ports: 1000
   tcp_full_scan: true
+  # Native async TCP connect fallback used when nmap is missing or forced off.
+  force_native_connect_scan: false
+  native_connect_scan_ports: [21, 22, 23, 25, 53, 80, 110, 139, 143, 389, 443, 445, 465, 587, 636, 993, 995, 1010, 1011, 1012, 1433, 1521, 3306, 3389, 5432, 5900, 6379, 8080, 8443]
+  native_connect_scan_timeout: 1.5
+  native_connect_scan_concurrency: 256
 
   # Module execution concurrency. Module checks run in parallel across hosts
   # (work for any single host stays serialized to preserve per-host throttle).
@@ -102,6 +107,26 @@ http_transport:
   # proxies:
   #   http: "http://127.0.0.1:8080"
   #   https: "http://127.0.0.1:8080"
+
+web_template_engine:
+  enabled: true
+  include_packaged: true
+  timeout: 8
+  # Template sweeps are I/O-bound and use their own higher concurrency and
+  # request budget instead of crawler limits. Politeness still applies through
+  # the shared curl_cffi transport.
+  concurrency: 50
+  max_requests_per_host: 2500
+  min_delay_seconds: 0.02
+  jitter_min_seconds: 0.0
+  jitter_max_seconds: 0.03
+  selection:
+    enabled: true
+    # Default runs include stack-matched templates plus a small critical
+    # exposure tier. Use `portwise scan --deep` or set deep: true to include the
+    # larger generic CVE/misconfiguration tier.
+    generic_always_on: true
+    deep: false
 
 http:
   max_redirects: 3

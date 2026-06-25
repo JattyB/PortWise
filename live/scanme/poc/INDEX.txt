@@ -1,0 +1,29 @@
+# PortWise POC / Evidence Index
+
+[     low] 45.33.32.156:80  HTTP Server Version Disclosure
+           cmd: nmap -sV -p80 45.33.32.156
+           file: 45.33.32.156_80_HTTP_Server_Version_Disclosure.txt
+
+[     low] 45.33.32.156:80  Cleartext Protocol Exposed — HTTP
+           cmd: nmap -sV -p80 45.33.32.156
+           file: 45.33.32.156_80_Cleartext_Protocol_Exposed_HTTP.txt
+
+[     low] 45.33.32.156:22  SSH Version Disclosure
+           cmd: nmap -sV -p22 45.33.32.156
+           file: 45.33.32.156_22_SSH_Version_Disclosure.txt
+
+[  medium] 45.33.32.156:22  Weak SSH Key Exchange Algorithm
+           cmd: ssh-audit 45.33.32.156 -p 22
+           file: 45.33.32.156_22_Weak_SSH_Key_Exchange_Algorithm.txt
+
+[  medium] 45.33.32.156:22  Weak SSH Cipher
+           cmd: ssh-audit 45.33.32.156 -p 22
+           file: 45.33.32.156_22_Weak_SSH_Cipher.txt
+
+[     low] 45.33.32.156:22  Weak SSH MAC Algorithm
+           cmd: ssh-audit 45.33.32.156 -p 22
+           file: 45.33.32.156_22_Weak_SSH_MAC_Algorithm.txt
+
+[  medium] 45.33.32.156:22  Deprecated SSH Host Key Type
+           cmd: ssh-audit 45.33.32.156 -p 22
+           file: 45.33.32.156_22_Deprecated_SSH_Host_Key_Type.txt

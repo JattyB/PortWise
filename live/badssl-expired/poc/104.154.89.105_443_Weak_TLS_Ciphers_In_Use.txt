@@ -1,0 +1,9 @@
+Finding : Weak TLS Ciphers In Use
+Severity: medium
+Target  : 104.154.89.105:443
+
+Reproduction command (run this and screenshot the output):
+  nmap --script ssl-enum-ciphers -p 443 104.154.89.105
+
+----- PASTE OUTPUT / SCREENSHOT REFERENCE BELOW -----
+

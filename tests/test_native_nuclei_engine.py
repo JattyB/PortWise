@@ -19,7 +19,7 @@ from portwise.modules.http.nuclei_engine import (
     select_nuclei_templates,
     run_native_nuclei_async,
 )
-from portwise.utils.http_client import PoliteResponse
+from portwise.utils.http_client import PoliteHttpClient, PoliteResponse, PolitenessConfig
 
 
 def _response(
@@ -289,7 +289,7 @@ def test_template_selector_uses_detected_stack_terms():
     assert "apache" in terms
 
 
-def test_template_selector_keeps_generic_exposure_and_cve_templates_always_on():
+def test_template_selector_keeps_critical_exposure_templates_always_on():
     request = NucleiRequest(method="GET", paths=["http://example.test/"], matchers=[NucleiMatcher(type="status", status=[200])])
     apache = NucleiTemplate("apache-check", "Apache Check", "info", "", tags=["apache", "tech"], http=[request])
     exposure = NucleiTemplate("env-file-exposure", ".env File Exposure", "high", "", tags=["exposure", "files"], http=[request])
@@ -304,11 +304,40 @@ def test_template_selector_keeps_generic_exposure_and_cve_templates_always_on():
     )
 
     ids = {template.template_id for template in selected}
-    assert ids == {"apache-check", "env-file-exposure", "CVE-2026-0001"}
+    assert ids == {"apache-check", "env-file-exposure"}
     assert "apache" in terms
     assert breakdown["tech_matched"] == 1
-    assert breakdown["always_on_generic"] == 2
+    assert breakdown["always_on_generic"] == 1
+    assert breakdown["critical_generic"] == 1
+    assert breakdown["deep_generic"] == 0
     assert breakdown["explicit_always_include"] == 0
+
+
+def test_template_selector_gates_deep_generic_templates():
+    request = NucleiRequest(method="GET", paths=["http://example.test/"], matchers=[NucleiMatcher(type="status", status=[200])])
+    critical = NucleiTemplate("env-file-exposure", ".env File Exposure", "high", "", tags=["exposure", "files"], http=[request])
+    critical.path = "portwise/data/nuclei/templates/http__exposures__files__env.yaml"
+    deep_cve = NucleiTemplate("CVE-2026-0002", "Generic CVE Probe", "critical", "", classification={"cve-id": "CVE-2026-0002"}, tags=["cve", "vuln"], http=[request])
+    deep_misconfig = NucleiTemplate("generic-misconfig", "Generic Misconfiguration", "medium", "", tags=["misconfig"], http=[request])
+    deep_misconfig.path = "portwise/data/nuclei/templates/http__misconfiguration__generic.yaml"
+
+    default_selected, _terms, default_breakdown = _select_nuclei_templates_with_breakdown(
+        [critical, deep_cve, deep_misconfig],
+        {"host": "example.test", "port": 80, "service": "http", "server": "unknown"},
+        {"selection": {"enabled": True}},
+    )
+    deep_selected, _terms, deep_breakdown = _select_nuclei_templates_with_breakdown(
+        [critical, deep_cve, deep_misconfig],
+        {"host": "example.test", "port": 80, "service": "http", "server": "unknown"},
+        {"selection": {"enabled": True, "deep": True}},
+    )
+
+    assert {template.template_id for template in default_selected} == {"env-file-exposure"}
+    assert default_breakdown["critical_generic"] == 1
+    assert default_breakdown["deep_generic"] == 0
+    assert {template.template_id for template in deep_selected} == {"env-file-exposure", "CVE-2026-0002", "generic-misconfig"}
+    assert deep_breakdown["critical_generic"] == 1
+    assert deep_breakdown["deep_generic"] == 2
 
 
 def test_generic_exposure_template_fires_with_unrelated_detected_stack(tmp_path):
@@ -370,3 +399,55 @@ http:
     assert result.selection_breakdown["tech_matched"] == 0
     assert result.attempted_requests == 1
     assert result.matched_requests == 1
+
+
+def test_template_sweep_raises_client_limits_and_restores(tmp_path):
+    (tmp_path / "one.yaml").write_text(
+        """
+id: one
+info:
+  name: One
+  severity: info
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/one"
+    matchers:
+      - type: status
+        status: [200]
+""".strip(),
+        encoding="utf-8",
+    )
+    client = PoliteHttpClient(PolitenessConfig(max_concurrency=2, max_requests_per_host=3, min_delay=0.5, jitter_min=0.1, jitter_max=0.2))
+    original = (
+        client.config.max_concurrency,
+        client.config.max_requests_per_host,
+        client.config.min_delay,
+        client.config.jitter_min,
+        client.config.jitter_max,
+    )
+
+    result = asyncio.run(run_native_nuclei_async(
+        client,
+        {"host": "127.0.0.1", "port": 9, "protocol": "tcp", "service": "http"},
+        {"web_template_engine": {
+            "enabled": True,
+            "include_packaged": False,
+            "template_dir": str(tmp_path),
+            "concurrency": 25,
+            "max_requests_per_host": 100,
+            "min_delay_seconds": 0.01,
+            "jitter_min_seconds": 0.0,
+            "jitter_max_seconds": 0.01,
+            "selection": {"enabled": False},
+        }},
+    ))
+
+    assert result.loaded_templates == 1
+    assert (
+        client.config.max_concurrency,
+        client.config.max_requests_per_host,
+        client.config.min_delay,
+        client.config.jitter_min,
+        client.config.jitter_max,
+    ) == original

@@ -17,7 +17,6 @@ authors = [
 dependencies = [
   "PyYAML>=6.0",
   "curl_cffi>=0.15.0",
-  "impacket>=0.13.0",
   "openpyxl>=3.1",
   "packaging>=23.0",
   "rich>=13.0",
@@ -32,6 +31,9 @@ browser = [
 ]
 screenshots = [
   "playwright>=1.45",
+]
+ad = [
+  "impacket>=0.13.0",
 ]
 
 [project.scripts]

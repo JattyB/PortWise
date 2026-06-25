@@ -2,6 +2,37 @@
 
 ## Unreleased
 
+### E2E fixes - template sweep and Windows base install
+- Moved `impacket>=0.13.0` out of base dependencies and into the optional
+  `portwise[ad]` extra. AD/SMB/LDAP modules continue to import impacket lazily
+  and emit the existing availability note when the extra is absent or blocked.
+- Added template-engine-specific concurrency, request budget, and delay knobs.
+  Native nuclei-style sweeps now run through the shared curl_cffi transport with
+  a higher template pool instead of crawler limits.
+- Split generic template selection into a small default critical-exposure tier
+  and a deep generic CVE/misconfiguration tier enabled by `--deep` or
+  `web_template_engine.selection.deep: true`.
+- Fixed web-phase config plumbing for crawl/archive/fuzz/parameter/template
+  sections and made optional Playwright screenshot failures degrade cleanly when
+  Windows cannot spawn the browser helper.
+- Validation: clean Windows base install completed with no impacket present;
+  isolated testaspnet deep selected sweep ran 1,220 templates / 1,851 requests
+  in 28.3s at 43.17 templates/sec. Live answer-key groups held for scanme and
+  badssl. Full suite: 405 passed.
+
+### Phase K - native TCP connect-scan fallback
+- Added a native async TCP connect scanner as the basic discovery fallback when
+  nmap is absent or `scanner.force_native_connect_scan` is enabled. The fallback
+  probes a configurable common-port list, synthesizes assets, and feeds the
+  existing module-routing pipeline so `scanme.nmap.org` still routes HTTP and
+  SSH modules without nmap.
+- Kept the nmap path unchanged when the binary is present. Added validation for
+  both selector paths and recorded the native scan benchmark (ports/sec).
+- Impacket import/load failures in SMB/LDAP checks now emit a clear
+  `AD/SMB checks unavailable: impacket could not load (blocked or not importable)`
+  note instead of silently returning zero findings when the live dependency is
+  unavailable.
+
 ### Phase J - AD / SMB / auth via impacket
 - Added `impacket>=0.13.0` as a bundled dependency for AD/SMB capability. SMB
   authentication no longer shells out to `nxc`/`netexec`; the authenticated SMB
@@ -23,7 +54,7 @@
 - Live validation: public validation targets exposed no SMB. Localhost TCP/445
   was reachable, but Windows Defender blocked the local impacket user-site
   import as potentially unwanted software, so live impacket enumeration failed
-  closed with no findings. Full suite: 396 passed.
+  closed with no findings. Full suite: 400 passed.
 
 ### Phase I - Playwright screenshots
 - Replaced the optional gowitness screenshot path with native Playwright

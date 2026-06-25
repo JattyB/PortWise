@@ -109,7 +109,8 @@ def capture_screenshot(
     try:
         _run_async((capturer or _capture_with_playwright)(url, dest, cfg))
     except Exception as exc:
-        message = str(exc).splitlines()[0]
+        lines = str(exc).splitlines()
+        message = lines[0] if lines else exc.__class__.__name__
         if "Executable doesn't exist" in message or "playwright install" in message:
             return None, "playwright: Chromium browser is not installed; skipped - run playwright install chromium"
         return None, f"playwright: screenshot failed for {url}: {message}"

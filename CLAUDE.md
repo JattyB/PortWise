@@ -1,94 +1,96 @@
 # CLAUDE.md — PortWise
 
-Operating guide for any AI agent (Claude Code) working in this repository.
-Read this fully before making changes. These rules are binding.
+Project orientation for any AI agent working in this repository. Read it fully
+before changing anything. The binding engineering rules live in `AGENTS.md` —
+follow them.
 
 ## What PortWise is
 
-PortWise is a **penetration-testing orchestration platform** (Python, ~12k LOC).
-Its job is to be the **orchestration + correlation + CVE mapping + de-duplication +
-evidence/POC + reporting engine** that ties best-in-class scanners and native
-protocol checks into one prioritized, evidence-backed report.
+A self-sufficient, professional penetration-testing platform. It is the engine
+that ties discovery, native scanning, web crawling and fuzzing, templated vuln
+checks, CVE correlation, de-duplication, evidence/POC capture, and reporting into
+one prioritized result. Treat it as a product, not a script.
 
-It is a real offensive-security tool for authorized assessments. Treat it as a
-professional product, not a demo.
+## Voice
 
-## Positioning & language (strict)
+Write like a senior operator: direct and technical, no hedging or disclaimer
+phrasing. Depth and scope are operator-driven — depth is `recon` (fast
+enumeration) or `full` (complete assessment); intrusive and credentialed actions
+are explicit opt-in. State capability plainly.
 
-- **Never** describe PortWise or its behavior as "safe", "safe-by-default", or
-  "controlled" — in code, config, comments, docstrings, README, CHANGELOG, CLI
-  help, or report text. That framing is banned.
-- The correct concept is **operator-controlled depth and scope**:
-  - **Depth** — the operator chooses `recon` (fast enumeration) or `full`
-    (complete active assessment).
-  - **Scope** — intrusive or credentialed actions are explicit opt-in per
-    engagement. That is standard scope control, not a limitation, and is never
-    described as "safety".
-- Write user-facing text the way a senior pentester would: direct, technical,
-  confident. No hedging, no apology.
+## Architecture
 
-## Architecture decision (do not violate)
+Self-sufficient on `pip install`. Deliver capability via, in order of preference:
+native Python logic > bundled pip libraries > shipped/synced data files. External
+binaries are optional accelerators only, behind the `ExternalTool` adapter; nmap
+is the one assumed scanner, with a native connect-scan fallback for its absence.
 
-- **Native** for protocol-level checks (SSH KEX, SMB negotiate, TLS handshake,
-  HTTP fingerprint, banner grab). These stay dependency-free.
-- **Orchestrate** heavy / fast-moving engines (nuclei, ffuf, gowitness, testssl,
-  masscan) as **optional** integrations — never hard requirements:
-  - Detect the binary on PATH. If present, run it and parse its **JSON** output
-    into PortWise `Finding` objects. If absent, skip with a clear note and emit
-    the equivalent command through the existing `handoff` system.
-  - Always prefer JSON output modes (`nuclei -jsonl`, `ffuf -of json`,
-    `gowitness`, `masscan -oJ`, `nmap -oX`). Do not scrape fragile text.
-- **Do not reimplement** nuclei/ffuf/nmap engines in Python. PortWise is the
-  brain; those are the hands.
-- New external integrations go through the shared `ExternalTool` adapter
-  (detect → run-with-timeout → parse JSON → graceful fallback).
+- **Transport:** every HTTP request rides one shared, human-like transport built
+  on `curl_cffi` (Chrome JA3/TLS + HTTP2 impersonation, realistic headers, cookie
+  jar, jitter, UA rotation, optional Burp/SOCKS proxy), with a Playwright path for
+  JS challenges. Never add a second HTTP path.
+- **Speed:** async-first throughout (`asyncio` + `curl_cffi`/`httpx`, bounded
+  concurrency, pooling); CPU-heavy matching uses a process pool.
 
-## Use context7
+Full engineering contract, build loop, and acceptance gates: `AGENTS.md`.
 
-The `context7` MCP server is available. Use it to fetch **current** documentation
-for external-tool JSON schemas and any libraries you integrate, instead of relying
-on training memory — these formats and APIs change.
+## Native engines (owned in-tree)
 
-## Working rules
+Capabilities are reimplemented natively rather than shelled out, so the platform
+needs no external setup:
 
-- Keep the test suite green at all times. Run `pytest -q` before every commit.
-- Add tests for every new feature or fix.
-- One logical change per commit; commit per roadmap phase with a clear message.
-- Update `CHANGELOG.md` and `ROADMAP.md` as you go.
-- Intrusive / credentialed actions and external active engines run only at depth
-  `full` or behind an explicit flag — framed as scope control.
-- Preserve de-duplication, confidence scoring, and CVE version-matching behavior;
-  do not regress false-positive controls.
-- Do not commit engagement output: `runs/`, `scans/`, `reports/`, `evidence/`,
-  `cache/`, or `config.yaml` (see `.gitignore`).
+- Transport / anti-bot — curl_cffi JA3 transport + Playwright fallback.
+- Port/host discovery — nmap (service detection) + native async connect-scan.
+- Subdomain/asset discovery — passive sources (crt.sh, archives) + async DNS.
+- URL/endpoint discovery — native crawler + archive pulls (Wayback/CommonCrawl)
+  + parameter discovery.
+- Content/directory fuzzing — async wordlist engine with soft-404 / size / word /
+  line filtering and recursion.
+- HTTP probe + tech fingerprint — async prober + Wappalyzer fingerprint data.
+- Vuln scanning — native template engine consuming synced nuclei-format templates
+  (plus custom templates for gaps).
+- JS/secrets — endpoint + secret extraction with shipped rule sets.
+- TLS — native cert + protocol + cipher assessment.
+- AD/SMB/auth — optional `portwise[ad]` impacket extra (SMB/LDAP
+  enumeration; opt-in Kerberoast/AS-REP).
+- Exploit intel — native ExploitDB lookup for the exploit-available signal.
+- Screenshots — Playwright (`portwise[screenshots]` extra).
 
-## Repository map
+Status and sequencing live in `ROADMAP.md`.
+
+## Repo map
 
 ```
 portwise/
-  cli.py              # CLI entrypoint and command handlers
-  core/               # runner, routing, models, module_runner, config, progress
-  modules/            # 17 service modules (http/, tls/, smb/, registry.py, ...)
-  intelligence/       # cve_enrichment, version_match, aggregation, handoff, poc, ...
-  scanners/           # nmap_runner, nmap_parser, nse, ssh_algos, smb_native
-  reporting/          # html_report, pentest_report, _html_common, remediation
-  utils/              # http_client, sanitize, logging
-tests/                # pytest suite (keep green)
-config.example.yaml   # profiles + scanner config
+  cli.py                 # CLI entrypoint and command handlers
+  core/                  # runner, routing, models, module_runner, config,
+                         # progress, doctor, external_tool
+  modules/               # service modules (http/, tls/, smb/, registry.py, ...)
+  intelligence/          # cve_enrichment, version_match, aggregation, handoff,
+                         # poc, credentials, auth_checks, exploit_intel,
+                         # screenshots, web_engines
+  scanners/              # nmap_runner, nmap_parser, nse, ssh_algos, smb_native
+  reporting/             # html_report, pentest_report, _html_common,
+                         # remediation, csv_report, narrative
+  utils/                 # http_client (shared transport), sanitize, net, logging
+tests/                   # pytest suite (keep green)
+config.example.yaml      # profiles + scanner config
+ROADMAP.md               # phased native-rebuild plan + status
 ```
 
 Pipeline: discover → port scan → service fingerprint → route to modules →
-module checks (native + orchestrated) → CVE enrichment → dedup/confidence →
-findings → report / POC / handoff.
+module checks (native + optional accelerators) → CVE + exploit intel →
+dedup/confidence → findings → report / POC / handoff.
 
 ## Commands
 
 ```bash
 pip install -e ".[dev]"          # dev install
-pytest -q                        # run tests
+pytest -q                        # run the suite
 
-portwise scan --targets t.txt --profile full-vapt --config config.yaml --execute
-portwise analyze --nmap scan.xml --profile full-vapt --config config.yaml
+portwise doctor                  # show which optional accelerators are present
+portwise scan    --targets t.txt --profile full-vapt --config config.yaml --execute
+portwise analyze --nmap scan.xml --profile full-vapt --config config.yaml --active-modules
 portwise report  --run runs/latest.json --format html
 portwise summary --run runs/latest.json
 portwise ports   --run runs/latest.json --port 22 --hosts
@@ -97,12 +99,13 @@ portwise poc     --run runs/latest.json --capture
 ```
 
 CLI commands: init, scan, analyze, report, retest, status, ports, summary,
-handoff, poc, modules, version (plus `doctor`, added in roadmap Phase 0).
+handoff, poc, doctor, modules, version.
 
 Profiles: `quick-triage` (recon depth), `internal-vapt`, `external-vapt`,
 `full-vapt` (full depth — one command, internal or external), `offline-analysis`.
+Depth resolves CLI flag > profile > config; `full-vapt` runs everything.
 
 ## When unsure
 
-Make the change and report it; only stop to ask when a decision is genuinely
-ambiguous or would alter the platform's identity or the rules above.
+Make the change and report it. Stop only when a decision would change the
+platform's identity or break a rule in `AGENTS.md`.

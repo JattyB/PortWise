@@ -1,0 +1,13 @@
+# PortWise POC / Evidence Index
+
+[     low] 104.154.89.105:443  HSTS Missing
+           cmd: nmap --script http-security-headers -p 443 104.154.89.105    # (or) curl -sI https://104.154.89.105:443/ | grep -i strict-transport
+           file: 104.154.89.105_443_HSTS_Missing.txt
+
+[  medium] 104.154.89.105:443  Weak TLS Ciphers In Use
+           cmd: nmap --script ssl-enum-ciphers -p 443 104.154.89.105
+           file: 104.154.89.105_443_Weak_TLS_Ciphers_In_Use.txt
+
+[     low] 104.154.89.105:443  HTTP Server Version Disclosure
+           cmd: nmap -sV -p443 104.154.89.105
+           file: 104.154.89.105_443_HTTP_Server_Version_Disclosure.txt

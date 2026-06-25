@@ -35,7 +35,7 @@ class EngineStatus:
 # (display name, binary, what it enables, fallback when absent)
 _ENGINES: tuple[tuple[str, str, str, str], ...] = (
     ("nmap", "nmap", "discovery, TCP/UDP port + service detection (core scanning)",
-     "core scanning is unavailable; provide Nmap XML via `portwise analyze`"),
+     "native async TCP connect discovery is used instead for basic runs; provide Nmap XML via `portwise analyze` for offline import"),
     ("masscan", "masscan", "fast wide port sweeps (masscan -oJ)",
      "Nmap is used for port discovery instead"),
     ("nuclei", "nuclei", "templated web/vuln checks parsed from -jsonl",

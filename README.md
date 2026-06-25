@@ -6,7 +6,7 @@ for authorized assessments.
 PortWise is the brain that ties best-in-class scanners and native protocol
 checks into one prioritized report: it discovers services, runs native
 protocol-level validation, orchestrates optional engines (nuclei, ffuf,
-Playwright screenshots, masscan, testssl), adds bundled impacket AD/SMB depth,
+Playwright screenshots, masscan, testssl), adds optional impacket AD/SMB depth,
 correlates and de-duplicates findings, maps
 version-matched CVEs, captures evidence/POCs, and generates JSON, HTML, and
 Excel reports suitable for client delivery.
@@ -33,13 +33,15 @@ It answers, with a visible evidence chain:
 
 - **Native** protocol-level checks (SSH KEX, SMB negotiate, TLS handshake, HTTP
   fingerprint, banner grab) — dependency-free.
-- **Bundled** AD/SMB depth through impacket: SMB null-session/share metadata,
-  LDAP anonymous enumeration where allowed, and opt-in credentialed SMB/Kerberos
-  checks without requiring nxc/netexec.
+- **Optional** AD/SMB depth through `portwise[ad]`: SMB null-session/share
+  metadata, LDAP anonymous enumeration where allowed, and opt-in credentialed
+  SMB/Kerberos checks through impacket without requiring nxc/netexec. Without
+  the extra, AD/SMB modules degrade with an availability note.
 - **Orchestrated** heavy/fast-moving engines (nuclei, ffuf, testssl, masscan,
   nmap) as **optional** integrations: detect the binary on PATH, run it, parse
   its JSON output into PortWise `Finding` objects; if absent, skip with a note
-  and emit the equivalent command through the handoff system. Playwright
+  and fall back to the native async TCP connect discovery path for basic runs.
+  Playwright
   screenshots are an optional Python extra: install `portwise[screenshots]` to
   capture browser-rendered web evidence with managed Chromium.
 
@@ -78,6 +80,16 @@ python -m venv .venv
 .venv\Scripts\Activate.ps1
 python -m pip install -e ".[dev]"
 ```
+
+AD/SMB/LDAP depth uses impacket and is installed only when requested:
+
+```powershell
+python -m pip install -e ".[ad]"
+```
+
+On Windows, Microsoft Defender and other AV products may quarantine impacket
+components because the package is dual-use. Install the `ad` extra in WSL or in
+an operator-approved Defender exclusion path when that capability is in scope.
 
 Linux:
 
@@ -147,6 +159,7 @@ portwise doctor
 | masscan | fast port sweeps | nmap used instead |
 | ssh-audit | SSH algorithm cross-check | native KEXINIT probe still runs |
 | searchsploit | exploit-availability lookup | flag omitted |
+| impacket (`portwise[ad]`) | AD/SMB/LDAP depth | native SMB negotiate remains; AD checks emit availability note |
 
 ## Depth And Scope
 

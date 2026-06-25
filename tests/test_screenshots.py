@@ -25,6 +25,11 @@ async def _fake_browser_missing(url: str, dest: str, cfg: dict) -> None:
     raise RuntimeError("Executable doesn't exist at chromium; run playwright install chromium")
 
 
+async def _fake_blank_error_capture(url: str, dest: str, cfg: dict) -> None:
+    del url, dest, cfg
+    raise NotImplementedError()
+
+
 def test_capture_screenshot_with_fake_playwright(tmp_path):
     out = tmp_path / "shots"
     path, note = capture_screenshot(
@@ -60,6 +65,17 @@ def test_capture_screenshot_missing_chromium(tmp_path):
     )
     assert path is None
     assert "Chromium browser is not installed" in note
+
+
+def test_capture_screenshot_blank_exception_degrades_cleanly(tmp_path):
+    path, note = capture_screenshot(
+        TARGET,
+        str(tmp_path / "shots"),
+        {"screenshots": {"playwright": {"enabled": True}}},
+        capturer=_fake_blank_error_capture,
+    )
+    assert path is None
+    assert "NotImplementedError" in note
 
 
 def test_capture_disabled(tmp_path):

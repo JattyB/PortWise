@@ -11,15 +11,48 @@ opt-in per engagement). That is standard scope control, not a limitation.
 This roadmap drives PortWise to professional-grade PT capability. Phases are
 implemented in order, one commit per phase, tests green throughout.
 
-**Status: Phases 0-7 complete; native rebuild Phases A-J complete.** 396 tests passing.
+**Status: Phases 0-7 complete; native rebuild Phases A-K complete.** 400 tests passing.
+
+## E2E fixes - template sweep and Windows base install
+
+- Base installs no longer depend on impacket. AD/SMB/LDAP depth is available via
+  the `portwise[ad]` extra, and modules keep the existing lazy-import
+  availability note when impacket is absent or quarantined.
+- Native template sweeps use template-specific concurrency, request budget, and
+  delay controls through the shared curl_cffi transport.
+- Generic template selection is tiered: default runs execute stack-matched
+  templates plus critical exposures; `--deep` / `web_template_engine.selection.deep`
+  enables the larger generic CVE/misconfiguration sweep.
+- Validation: Windows base install succeeds without impacket, AD modules keep
+  lazy degradation, scanme/badssl answer keys hold, and testaspnet deep selected
+  template sweep completes at 43.17 templates/sec. Full suite: 405 passed.
+
+## Native rebuild Phase K - native TCP connect-scan fallback
+
+**Goal:** remove the last hard external dependency for a basic run by making
+TCP discovery work without nmap.
+
+- PortWise now selects a native async TCP connect scan when nmap is absent or
+  when `scanner.force_native_connect_scan` is enabled. The fallback probes a
+  configurable common-port set, records open ports, synthesizes assets, and
+  feeds them into the existing module-routing pipeline.
+- Nmap remains the preferred path when present. The native fallback only takes
+  over when the binary is missing or the operator explicitly forces it.
+- Fixture validation keeps the selector honest: nmap-present runs stay on the
+  nmap path; import-failure handling for impacket now emits a clear
+  AD/SMB-availability note instead of silently producing zero findings.
+- Live validation on `scanme.nmap.org` with nmap hidden from PATH found ports
+  22 and 80, routed HTTP and SSH modules, and measured 2.96 ports/sec on the
+  local box. With nmap present, the runner stayed on the nmap path.
 
 ## Native rebuild Phase J - AD / SMB / auth via impacket
 
-**Goal:** native AD/SMB assessment using bundled impacket, with credentialed
+**Goal:** native AD/SMB assessment using optional impacket, with credentialed
 actions opt-in and off by default.
 
-- `impacket>=0.13.0` is now a core dependency. SMB authentication uses
-  impacket directly; `nxc`/`netexec` are no longer required for capability.
+- `impacket>=0.13.0` is installed through `portwise[ad]`. SMB authentication
+  uses impacket directly when the extra is present; `nxc`/`netexec` are no
+  longer required for capability.
 - SMB checks now combine the existing native SMB NEGOTIATE probe with optional
   impacket null-session/share/OS/domain/signing enumeration.
 - LDAP routing and an LDAP module enumerate anonymous-bind users, groups,

@@ -1,0 +1,9 @@
+Finding : Weak SSH MAC Algorithm
+Severity: low
+Target  : 45.33.32.156:22
+
+Reproduction command (run this and screenshot the output):
+  ssh-audit 45.33.32.156 -p 22
+
+----- PASTE OUTPUT / SCREENSHOT REFERENCE BELOW -----
+

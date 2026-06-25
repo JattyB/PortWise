@@ -25,6 +25,10 @@ _GENERIC_ALWAYS_ON_PATH_MARKERS = (
     "http__exposures__",
     "http__misconfiguration__",
 )
+_GENERIC_CRITICAL_PATH_MARKERS = (
+    "http__exposures__configs__",
+    "http__exposures__files__",
+)
 _GENERIC_ALWAYS_ON_TAGS = {
     "backup",
     "backup-file",
@@ -49,6 +53,27 @@ _GENERIC_ALWAYS_ON_TAGS = {
     "token",
     "tokens",
     "vuln",
+}
+_GENERIC_CRITICAL_TAGS = {
+    "backup",
+    "backup-file",
+    "common-file",
+    "config",
+    "configs",
+    "default-credentials",
+    "default-creds",
+    "default-login",
+    "default-password",
+    "disclosure",
+    "exposure",
+    "exposures",
+    "file",
+    "files",
+    "info-leak",
+    "secret",
+    "secrets",
+    "token",
+    "tokens",
 }
 _SEVERITY_MAP = {
     "critical": "critical",
@@ -203,9 +228,14 @@ class NativeNucleiEngine:
             _record_skips(config, result)
             return result
 
-        semaphore = asyncio.Semaphore(int(cfg.get("concurrency", self.concurrency)))
-        tasks = [self._run_template(semaphore, template, target) for template in selected_templates]
-        outputs = await asyncio.gather(*tasks, return_exceptions=True)
+        concurrency = _template_int(cfg, "concurrency", _template_int(cfg, "template_concurrency", self.concurrency))
+        semaphore = asyncio.Semaphore(concurrency)
+        restore_client = await _apply_template_client_limits(self.client, cfg, concurrency)
+        try:
+            tasks = [self._run_template(semaphore, template, target) for template in selected_templates]
+            outputs = await asyncio.gather(*tasks, return_exceptions=True)
+        finally:
+            await restore_client()
         records: list[dict[str, Any]] = []
         for output in outputs:
             if isinstance(output, Exception):
@@ -312,6 +342,8 @@ def _select_nuclei_templates_with_breakdown(
         return templates, [], {
             "tech_matched": len(templates),
             "always_on_generic": 0,
+            "critical_generic": 0,
+            "deep_generic": 0,
             "explicit_always_include": 0,
             "overlap": 0,
         }
@@ -323,10 +355,13 @@ def _select_nuclei_templates_with_breakdown(
         if str(item).strip()
     }
     generic_always_on = bool(selection_cfg.get("generic_always_on", True))
+    deep_generic = bool(selection_cfg.get("deep", selection_cfg.get("include_deep_generic", config.get("deep", False))))
     selected: list[NucleiTemplate] = []
     selected_ids: set[str] = set()
     tech_ids: set[str] = set()
     generic_ids: set[str] = set()
+    critical_ids: set[str] = set()
+    deep_ids: set[str] = set()
     explicit_ids: set[str] = set()
     for template in templates:
         template_id = template.template_id.strip().lower()
@@ -334,9 +369,15 @@ def _select_nuclei_templates_with_breakdown(
         if template_id in always_include_ids:
             explicit_ids.add(template_id)
             include = True
-        if generic_always_on and _is_generic_always_on_template(template):
-            generic_ids.add(template_id)
-            include = True
+        if generic_always_on:
+            if _is_generic_critical_template(template):
+                critical_ids.add(template_id)
+                generic_ids.add(template_id)
+                include = True
+            elif deep_generic and _is_generic_always_on_template(template):
+                deep_ids.add(template_id)
+                generic_ids.add(template_id)
+                include = True
         score = _template_score(template, terms)
         if score > 0:
             tech_ids.add(template_id)
@@ -347,16 +388,29 @@ def _select_nuclei_templates_with_breakdown(
     breakdown = {
         "tech_matched": len(tech_ids),
         "always_on_generic": len(generic_ids),
+        "critical_generic": len(critical_ids),
+        "deep_generic": len(deep_ids),
         "explicit_always_include": len(explicit_ids),
         "overlap": len((tech_ids & generic_ids) | (tech_ids & explicit_ids) | (generic_ids & explicit_ids)),
     }
     return selected, sorted(terms), breakdown
 
 
+def _is_generic_critical_template(template: NucleiTemplate) -> bool:
+    path = template.path.replace("\\", "/").lower()
+    if any(marker in path for marker in _GENERIC_CRITICAL_PATH_MARKERS):
+        return True
+    tags = {_normalize_token(tag) for tag in template.tags}
+    critical_tags = {_normalize_token(tag) for tag in _GENERIC_CRITICAL_TAGS}
+    if tags & critical_tags:
+        return True
+    text_terms = _tokenize(" ".join([template.template_id, template.name, template.description]))
+    return bool(text_terms & critical_tags)
+
+
 def _is_generic_always_on_template(template: NucleiTemplate) -> bool:
     path = template.path.replace("\\", "/").lower()
-    filename = Path(path).name
-    if any(marker in filename for marker in _GENERIC_ALWAYS_ON_PATH_MARKERS):
+    if any(marker in path for marker in _GENERIC_ALWAYS_ON_PATH_MARKERS):
         return True
     tags = {_normalize_token(tag) for tag in template.tags}
     if tags & {_normalize_token(tag) for tag in _GENERIC_ALWAYS_ON_TAGS}:
@@ -807,6 +861,98 @@ def _record_skips(config: dict[str, Any], result: NativeNucleiRunResult) -> None
         bucket["selection_breakdown"] = dict(result.selection_breakdown)
 
 
+def _template_int(config: dict[str, Any], key: str, default: int) -> int:
+    try:
+        return max(1, int(config.get(key, default)))
+    except (TypeError, ValueError):
+        return max(1, int(default))
+
+
+def _template_float(config: dict[str, Any], key: str, default: float) -> float:
+    try:
+        return max(0.0, float(config.get(key, default)))
+    except (TypeError, ValueError):
+        return max(0.0, float(default))
+
+
+async def _apply_template_client_limits(client: PoliteHttpClient, config: dict[str, Any], concurrency: int):
+    client_config = getattr(client, "config", None)
+    transport = getattr(client, "transport", None)
+    if client_config is None:
+        async def noop() -> None:
+            return None
+        return noop
+
+    old_values = {
+        "max_concurrency": getattr(client_config, "max_concurrency", None),
+        "max_requests_per_host": getattr(client_config, "max_requests_per_host", None),
+        "min_delay": getattr(client_config, "min_delay", None),
+        "jitter_min": getattr(client_config, "jitter_min", None),
+        "jitter_max": getattr(client_config, "jitter_max", None),
+    }
+    new_budget = _template_int(config, "max_requests_per_host", _template_int(config, "request_budget_per_host", max(2500, concurrency * 50)))
+    new_delay = _template_float(config, "min_delay_seconds", _template_float(config, "rate_limit_delay_seconds", 0.02))
+    new_jitter_min = _template_float(config, "jitter_min_seconds", 0.0)
+    new_jitter_max = _template_float(config, "jitter_max_seconds", _template_float(config, "jitter_seconds", 0.03))
+
+    changed = False
+    if getattr(client_config, "max_concurrency", concurrency) < concurrency:
+        client_config.max_concurrency = concurrency
+        changed = True
+    if getattr(client_config, "max_requests_per_host", new_budget) < new_budget:
+        client_config.max_requests_per_host = new_budget
+    if getattr(client_config, "min_delay", new_delay) > new_delay:
+        client_config.min_delay = new_delay
+    if getattr(client_config, "jitter_min", new_jitter_min) > new_jitter_min:
+        client_config.jitter_min = new_jitter_min
+    if getattr(client_config, "jitter_max", new_jitter_max) > new_jitter_max:
+        client_config.jitter_max = new_jitter_max
+
+    transport_config = getattr(transport, "config", None) if transport is not None else None
+    if transport_config is not None and transport_config is not client_config:
+        if getattr(transport_config, "max_concurrency", concurrency) < concurrency:
+            transport_config.max_concurrency = concurrency
+            changed = True
+        if getattr(transport_config, "max_requests_per_host", new_budget) < new_budget:
+            transport_config.max_requests_per_host = new_budget
+        if getattr(transport_config, "min_delay", new_delay) > new_delay:
+            transport_config.min_delay = new_delay
+        if getattr(transport_config, "jitter_min", new_jitter_min) > new_jitter_min:
+            transport_config.jitter_min = new_jitter_min
+        if getattr(transport_config, "jitter_max", new_jitter_max) > new_jitter_max:
+            transport_config.jitter_max = new_jitter_max
+
+    if changed:
+        close_sync = getattr(client, "close_sync", None)
+        sync_loop = getattr(client, "_sync_loop", None)
+        if callable(close_sync) and sync_loop is not None:
+            close_sync()
+        else:
+            close = getattr(client, "close", None)
+            if close is not None:
+                maybe = close()
+                if hasattr(maybe, "__await__"):
+                    await maybe
+
+    async def restore() -> None:
+        for key, value in old_values.items():
+            if value is not None:
+                setattr(client_config, key, value)
+        if transport is not None:
+            transport_config = getattr(transport, "config", None)
+            if transport_config is not None and transport_config is not client_config:
+                for key, value in old_values.items():
+                    if value is not None and hasattr(transport_config, key):
+                        setattr(transport_config, key, value)
+            close_transport = getattr(transport, "close", None)
+            if changed and close_transport is not None:
+                maybe_close = close_transport()
+                if hasattr(maybe_close, "__await__"):
+                    await maybe_close
+
+    return restore
+
+
 async def run_native_nuclei_async(
     client: PoliteHttpClient,
     target: dict[str, Any],
@@ -814,7 +960,7 @@ async def run_native_nuclei_async(
 ) -> NativeNucleiRunResult:
     engine = NativeNucleiEngine(
         client,
-        concurrency=int(((config.get("web_template_engine") or {}) if isinstance(config.get("web_template_engine"), dict) else {}).get("concurrency", 10)),
+        concurrency=int(((config.get("web_template_engine") or {}) if isinstance(config.get("web_template_engine"), dict) else {}).get("concurrency", 50)),
         timeout=float(((config.get("web_template_engine") or {}) if isinstance(config.get("web_template_engine"), dict) else {}).get("timeout", 8.0)),
     )
     return await engine.run(target=target, config=config)

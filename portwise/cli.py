@@ -49,6 +49,7 @@ def build_parser() -> argparse.ArgumentParser:
     scan_cmd.add_argument("--udp-open-filtered", action="store_true")
     scan_cmd.add_argument("--validation-level", choices=["recon", "full"], default=None,
                           help="Assessment depth. 'recon' = fast enumeration. 'full' = complete active assessment (default for full-vapt).")
+    scan_cmd.add_argument("--deep", action="store_true", help="Alias for full depth plus deep generic web template sweep.")
     scan_cmd.add_argument("--internet-facing", action="store_true")
     scan_cmd.add_argument("--timeout", type=int)
     scan_cmd.add_argument("--no-cve", action="store_true")
@@ -158,12 +159,18 @@ def main(argv: list[str] | None = None) -> int:
                 config.scanner["timeout"] = args.timeout
             # Assessment depth precedence: explicit CLI flag > profile > config default > recon.
             effective_vl = (
-                args.validation_level
+                "full" if args.deep else args.validation_level
                 or profile.raw.get("validation_level")
                 or config.scanner.get("validation_level")
                 or "recon"
             )
             config.scanner["validation_level"] = effective_vl
+            if args.deep:
+                template_cfg = config.raw.setdefault("web_template_engine", {})
+                if isinstance(template_cfg, dict):
+                    selection_cfg = template_cfg.setdefault("selection", {})
+                    if isinstance(selection_cfg, dict):
+                        selection_cfg["deep"] = True
             config.scanner["internet_facing"] = args.internet_facing
             config.scanner["udp_service_detection_on_open_filtered"] = args.udp_open_filtered
             if args.concurrency is not None:

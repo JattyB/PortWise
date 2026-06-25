@@ -8,9 +8,12 @@ opening real SMB/LDAP/Kerberos sessions.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from functools import lru_cache
 from typing import Any, Callable
 
 from portwise.intelligence.credentials import Credential
+
+IMPACKET_UNAVAILABLE_NOTE = "AD/SMB checks unavailable: impacket could not load (blocked or not importable)"
 
 
 @dataclass(slots=True)
@@ -85,6 +88,24 @@ LdapConnectionFactory = Callable[..., Any]
 KerberosRequester = Callable[[KerberosRequest, Credential], Any]
 
 
+@lru_cache(maxsize=1)
+def impacket_load_error() -> str | None:
+    try:
+        from impacket.smbconnection import SMBConnection  # noqa: F401
+    except Exception as exc:  # pragma: no cover - environment-specific
+        return _safe_error(exc)
+    return None
+
+
+def impacket_available() -> bool:
+    return impacket_load_error() is None
+
+
+def impacket_unavailable_note() -> str:
+    detail = impacket_load_error()
+    return IMPACKET_UNAVAILABLE_NOTE if not detail else f"{IMPACKET_UNAVAILABLE_NOTE}: {detail}"
+
+
 def enumerate_smb(
     host: str,
     *,
@@ -93,6 +114,10 @@ def enumerate_smb(
     conn_factory: SmbConnectionFactory | None = None,
 ) -> SmbEnumeration:
     result = SmbEnumeration(host=host, port=port)
+    load_error = impacket_load_error() if conn_factory is None else None
+    if load_error is not None:
+        result.error = f"{IMPACKET_UNAVAILABLE_NOTE}: {load_error}"
+        return result
     try:
         conn = _new_smb_connection(host, port, timeout, conn_factory)
     except Exception as exc:
@@ -124,6 +149,9 @@ def authenticated_smb_access(
     timeout: float = 6.0,
     conn_factory: SmbConnectionFactory | None = None,
 ) -> SmbAuthResult:
+    load_error = impacket_load_error() if conn_factory is None else None
+    if load_error is not None:
+        return SmbAuthResult(False, error=f"{IMPACKET_UNAVAILABLE_NOTE}: {load_error}")
     try:
         conn = _new_smb_connection(host, port, timeout, conn_factory)
     except Exception as exc:
@@ -149,6 +177,10 @@ def enumerate_ldap_anonymous(
     conn_factory: LdapConnectionFactory | None = None,
 ) -> LdapEnumeration:
     result = LdapEnumeration(host=host, port=port, base_dn=base_dn)
+    load_error = impacket_load_error() if conn_factory is None else None
+    if load_error is not None:
+        result.error = f"{IMPACKET_UNAVAILABLE_NOTE}: {load_error}"
+        return result
     url = ("ldaps" if use_ssl else "ldap") + f"://{host}:{port}"
     try:
         conn = _new_ldap_connection(url, base_dn, timeout, conn_factory)
@@ -215,6 +247,9 @@ def construct_asrep_roast_requests(
 
 def request_tgs_with_impacket(request: KerberosRequest, cred: Credential) -> Any:
     """Construct and issue a TGS request through impacket for Kerberoast checks."""
+    load_error = impacket_load_error()
+    if load_error is not None:
+        raise RuntimeError(f"{IMPACKET_UNAVAILABLE_NOTE}: {load_error}")
     from impacket.krb5 import constants
     from impacket.krb5.kerberosv5 import getKerberosTGS, getKerberosTGT
     from impacket.krb5.types import Principal
@@ -235,6 +270,9 @@ def request_tgs_with_impacket(request: KerberosRequest, cred: Credential) -> Any
 
 def request_asrep_with_impacket(request: KerberosRequest, cred: Credential) -> Any:
     """Construct an AS-REP roast request through impacket for a no-preauth user."""
+    load_error = impacket_load_error()
+    if load_error is not None:
+        raise RuntimeError(f"{IMPACKET_UNAVAILABLE_NOTE}: {load_error}")
     from impacket.krb5 import constants
     from impacket.krb5.kerberosv5 import getKerberosTGT
     from impacket.krb5.types import Principal

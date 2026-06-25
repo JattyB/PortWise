@@ -12,12 +12,15 @@ from urllib.parse import urlencode
 from portwise.core.models import Confidence, Evidence, Finding, FindingCategory, Severity
 from portwise.intelligence.credentials import Credential
 from portwise.scanners.ad_impacket import (
+    IMPACKET_UNAVAILABLE_NOTE,
     KerberosRequester,
     LdapObject,
     SmbConnectionFactory,
     authenticated_smb_access,
     construct_asrep_roast_requests,
     construct_kerberoast_requests,
+    impacket_available,
+    impacket_load_error,
     request_asrep_with_impacket,
     request_tgs_with_impacket,
 )
@@ -116,6 +119,10 @@ def run_smb_auth(
     """Authenticated SMB/AD checks through impacket. Returns (findings, notes)."""
     findings: list[Finding] = []
     notes: list[str] = []
+    if conn_factory is None and not impacket_available():
+        detail = impacket_load_error()
+        notes.append(IMPACKET_UNAVAILABLE_NOTE if not detail else f"{IMPACKET_UNAVAILABLE_NOTE}: {detail}")
+        return findings, notes
     tgs_requester = tgs_requester or request_tgs_with_impacket
     asrep_requester = asrep_requester or request_asrep_with_impacket
     for cred in creds:

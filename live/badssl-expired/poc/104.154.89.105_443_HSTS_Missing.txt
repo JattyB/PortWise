@@ -1,0 +1,9 @@
+Finding : HSTS Missing
+Severity: low
+Target  : 104.154.89.105:443
+
+Reproduction command (run this and screenshot the output):
+  nmap --script http-security-headers -p 443 104.154.89.105    # (or) curl -sI https://104.154.89.105:443/ | grep -i strict-transport
+
+----- PASTE OUTPUT / SCREENSHOT REFERENCE BELOW -----
+

@@ -1,11 +1,12 @@
 from __future__ import annotations
 
+import asyncio
 from pathlib import Path
 from dataclasses import asdict
 from typing import Any
 
 from portwise.core.config import PortWiseConfig, Profile
-from portwise.core.models import Asset, Finding, RunResult, RunState, Service
+from portwise.core.models import Asset, CommandResult, Finding, RunResult, RunState, Service, utc_now
 from portwise.core.module_runner import execute_safe_modules, module_summary
 from portwise.core.progress import ProgressTracker
 from portwise.core.routing import module_target_counts, route_assets, write_target_files
@@ -16,6 +17,7 @@ from portwise.intelligence.false_positive import apply_category_rules, apply_fal
 from portwise.modules.exposure.exposure_engine import evaluate_exposure
 from portwise.modules.http.http_engine import HttpEngine
 from portwise.modules.tls.tls_engine import TlsEngine
+from portwise.scanners.connect_scan import DEFAULT_CONNECT_SCAN_PORTS, run_native_connect_scan
 from portwise.scanners.nmap_parser import parse_nmap_xml
 from portwise.scanners.nmap_runner import NmapRunner
 from portwise.utils.files import ensure_dir, write_json
@@ -46,13 +48,14 @@ def run_scan(
     state = RunState(project=run.project, profile=profile.name, targets_loaded=_load_targets(targets_file))
     timeout = int(config.scanner.get("nmap_timeout_seconds", 1800))
     nmap = NmapRunner(workspace, timeout_seconds=timeout)
+    use_native_connect_scan = _use_native_connect_scan(config, nmap)
     live_hosts_file = workspace / "scans" / "live_hosts.txt"
     latest = workspace / "runs" / "latest.json"
     # -Pn behaviour: treat every supplied target as live so hosts that block ICMP
     # (but have open ports) are still port-scanned. Default on, since PortWise is
     # typically pointed at a known target list. Turn off for large ranges.
     assume_hosts_up = bool(config.scanner.get("assume_hosts_up", True))
-    if assume_hosts_up and state.targets_loaded:
+    if assume_hosts_up and state.targets_loaded and not use_native_connect_scan:
         state.live_hosts = sorted(set(state.targets_loaded))
         _write_live_hosts(live_hosts_file, state.live_hosts)
         state.generated_files.append(str(live_hosts_file))
@@ -61,113 +64,124 @@ def run_scan(
         progress.start_phase("Target validation", f"{len(state.targets_loaded)} targets loaded")
         progress.finish_phase("Target validation", message="targets loaded")
 
-    for step in profile.nmap_steps:
-        phase_name = _phase_name(step)
-        if step != "discovery" and not state.live_hosts:
-            xml_path = workspace / "scans" / PHASE_XML["discovery"]
-            if xml_path.exists():
-                _merge_discovery(state, parse_nmap_xml(xml_path))
-                _write_live_hosts(live_hosts_file, state.live_hosts)
+    if use_native_connect_scan:
+        _run_native_connect_scan(
+            workspace=workspace,
+            config=config,
+            state=state,
+            run=run,
+            latest=latest,
+            progress=progress,
+            dry_run=dry_run,
+        )
+    else:
+        for step in profile.nmap_steps:
+            phase_name = _phase_name(step)
+            if step != "discovery" and not state.live_hosts:
+                xml_path = workspace / "scans" / PHASE_XML["discovery"]
+                if xml_path.exists():
+                    _merge_discovery(state, parse_nmap_xml(xml_path))
+                    _write_live_hosts(live_hosts_file, state.live_hosts)
+                    if progress:
+                        _update_progress_counters(progress, state, run)
+                else:
+                    _skip(state, step, "No live hosts are available yet; discovery XML is missing.")
+                    if progress:
+                        progress.skip_phase(phase_name, "No live hosts are available yet; discovery XML is missing.")
+                    _persist(latest, run, state)
+                    continue
+
+            if step == "tcp_services" and not _all_ports(state.tcp_open_ports_by_host):
+                _skip(state, step, "No open TCP ports discovered; skipping TCP service detection.")
                 if progress:
-                    _update_progress_counters(progress, state, run)
-            else:
-                _skip(state, step, "No live hosts are available yet; discovery XML is missing.")
-                if progress:
-                    progress.skip_phase(phase_name, "No live hosts are available yet; discovery XML is missing.")
+                    progress.skip_phase(phase_name, "No open TCP ports discovered; skipping TCP service detection.")
                 _persist(latest, run, state)
                 continue
 
-        if step == "tcp_services" and not _all_ports(state.tcp_open_ports_by_host):
-            _skip(state, step, "No open TCP ports discovered; skipping TCP service detection.")
-            if progress:
-                progress.skip_phase(phase_name, "No open TCP ports discovered; skipping TCP service detection.")
-            _persist(latest, run, state)
-            continue
+            if step == "tcp_services":
+                _run_grouped_service_detection(
+                    protocol="tcp",
+                    workspace=workspace,
+                    nmap=nmap,
+                    state=state,
+                    run=run,
+                    dry_run=dry_run,
+                    latest=latest,
+                    open_ports_by_host=state.tcp_open_ports_by_host,
+                    progress=progress,
+                )
+                continue
 
-        if step == "tcp_services":
-            _run_grouped_service_detection(
-                protocol="tcp",
-                workspace=workspace,
-                nmap=nmap,
-                state=state,
-                run=run,
-                dry_run=dry_run,
-                latest=latest,
-                open_ports_by_host=state.tcp_open_ports_by_host,
-                progress=progress,
+            udp_ports_for_services = _udp_service_ports_by_host(
+                state,
+                include_open_filtered=bool(config.scanner.get("udp_service_detection_on_open_filtered", False)),
             )
-            continue
+            if step == "udp_services" and not _all_ports(udp_ports_for_services):
+                _skip(state, step, "No open UDP ports discovered; skipping UDP service detection.")
+                if progress:
+                    progress.skip_phase(phase_name, "No open UDP ports discovered; skipping UDP service detection.")
+                _persist(latest, run, state)
+                continue
 
-        udp_ports_for_services = _udp_service_ports_by_host(
-            state,
-            include_open_filtered=bool(config.scanner.get("udp_service_detection_on_open_filtered", False)),
-        )
-        if step == "udp_services" and not _all_ports(udp_ports_for_services):
-            _skip(state, step, "No open UDP ports discovered; skipping UDP service detection.")
+            if step == "udp_services":
+                _run_grouped_service_detection(
+                    protocol="udp",
+                    workspace=workspace,
+                    nmap=nmap,
+                    state=state,
+                    run=run,
+                    dry_run=dry_run,
+                    latest=latest,
+                    open_ports_by_host=udp_ports_for_services,
+                    progress=progress,
+                )
+                continue
+
             if progress:
-                progress.skip_phase(phase_name, "No open UDP ports discovered; skipping UDP service detection.")
-            _persist(latest, run, state)
-            continue
-
-        if step == "udp_services":
-            _run_grouped_service_detection(
-                protocol="udp",
-                workspace=workspace,
-                nmap=nmap,
-                state=state,
-                run=run,
-                dry_run=dry_run,
-                latest=latest,
-                open_ports_by_host=udp_ports_for_services,
-                progress=progress,
-            )
-            continue
-
-        if progress:
-            command_preview, _ = nmap.build_command(
+                command_preview, _ = nmap.build_command(
+                    step,
+                    targets_file=targets_file,
+                    live_hosts_file=live_hosts_file,
+                    open_tcp_ports=_ports_arg(_all_ports(state.tcp_open_ports_by_host), "tcp"),
+                    open_udp_ports=_ports_arg(_interesting_udp_ports(state), "udp"),
+                )
+                progress.start_phase(phase_name, f"running {step}", command=command_preview, output_file=str(workspace / "scans" / PHASE_XML.get(step, "")))
+            command = nmap.run_step(
                 step,
                 targets_file=targets_file,
+                dry_run=dry_run,
                 live_hosts_file=live_hosts_file,
                 open_tcp_ports=_ports_arg(_all_ports(state.tcp_open_ports_by_host), "tcp"),
                 open_udp_ports=_ports_arg(_interesting_udp_ports(state), "udp"),
             )
-            progress.start_phase(phase_name, f"running {step}", command=command_preview, output_file=str(workspace / "scans" / PHASE_XML.get(step, "")))
-        command = nmap.run_step(
-            step,
-            targets_file=targets_file,
-            dry_run=dry_run,
-            live_hosts_file=live_hosts_file,
-            open_tcp_ports=_ports_arg(_all_ports(state.tcp_open_ports_by_host), "tcp"),
-            open_udp_ports=_ports_arg(_interesting_udp_ports(state), "udp"),
-        )
-        run.commands.append(command)
-        state.commands_executed.append(command)
-        if command.error:
-            run.failed_checks.append(f"nmap:{step}:{command.error}")
-            state.failed_phases.append(f"{step}: {command.error}")
-            if progress:
-                progress.fail_phase(phase_name, command.error)
+            run.commands.append(command)
+            state.commands_executed.append(command)
+            if command.error:
+                run.failed_checks.append(f"nmap:{step}:{command.error}")
+                state.failed_phases.append(f"{step}: {command.error}")
+                if progress:
+                    progress.fail_phase(phase_name, command.error)
 
-        xml_path = workspace / "scans" / PHASE_XML.get(step, "")
-        if xml_path.exists():
-            assets = parse_nmap_xml(xml_path)
-            run.assets = _merge_assets(run.assets, assets)
-            _merge_phase(state, step, assets)
-            if step == "discovery":
-                _write_live_hosts(live_hosts_file, state.live_hosts)
-                state.generated_files.append(str(live_hosts_file))
-            if progress:
-                _update_progress_counters(progress, state, run)
-                progress.finish_phase(phase_name, message=f"parsed {xml_path}")
-        elif dry_run:
-            _skip(state, step, f"Dry-run only; expected XML not present at {xml_path}.")
-            if progress:
-                progress.skip_phase(phase_name, f"Dry-run planned command; expected XML not present at {xml_path}.")
-        else:
-            _skip(state, step, f"Expected XML not found after phase: {xml_path}.")
-            if progress and not command.error:
-                progress.skip_phase(phase_name, f"Expected XML not found after phase: {xml_path}.")
-        _persist(latest, run, state)
+            xml_path = workspace / "scans" / PHASE_XML.get(step, "")
+            if xml_path.exists():
+                assets = parse_nmap_xml(xml_path)
+                run.assets = _merge_assets(run.assets, assets)
+                _merge_phase(state, step, assets)
+                if step == "discovery":
+                    _write_live_hosts(live_hosts_file, state.live_hosts)
+                    state.generated_files.append(str(live_hosts_file))
+                if progress:
+                    _update_progress_counters(progress, state, run)
+                    progress.finish_phase(phase_name, message=f"parsed {xml_path}")
+            elif dry_run:
+                _skip(state, step, f"Dry-run only; expected XML not present at {xml_path}.")
+                if progress:
+                    progress.skip_phase(phase_name, f"Dry-run planned command; expected XML not present at {xml_path}.")
+            else:
+                _skip(state, step, f"Expected XML not found after phase: {xml_path}.")
+                if progress and not command.error:
+                    progress.skip_phase(phase_name, f"Expected XML not found after phase: {xml_path}.")
+            _persist(latest, run, state)
 
     if not state.live_hosts:
         run.skipped_checks.append("No live hosts discovered.")
@@ -276,6 +290,96 @@ def run_scan(
     if progress:
         _update_progress_counters(progress, state, run)
     return run
+
+
+def _use_native_connect_scan(config: PortWiseConfig, nmap: NmapRunner) -> bool:
+    scanner_cfg = config.scanner if isinstance(config.scanner, dict) else {}
+    if bool(scanner_cfg.get("force_native_connect_scan", False)):
+        return True
+    return not nmap.nmap_available()
+
+
+def _run_native_connect_scan(
+    *,
+    workspace: Path,
+    config: PortWiseConfig,
+    state: RunState,
+    run: RunResult,
+    latest: Path,
+    progress: ProgressTracker | None,
+    dry_run: bool,
+) -> None:
+    scanner_cfg = config.scanner if isinstance(config.scanner, dict) else {}
+    ports = _native_connect_scan_ports(scanner_cfg)
+    timeout = float(scanner_cfg.get("native_connect_scan_timeout", scanner_cfg.get("timeout", 1.5)))
+    concurrency = int(scanner_cfg.get("native_connect_scan_concurrency", 256))
+    phase_name = "Native TCP connect scan"
+    if progress:
+        progress.start_phase(
+            phase_name,
+            f"scanning {len(state.targets_loaded)} target(s) across {len(ports)} TCP port(s)",
+            command=["connect-scan", "--ports", ",".join(str(port) for port in ports), "--timeout", str(timeout), "--concurrency", str(concurrency)],
+        )
+
+    command = CommandResult(
+        name="native_connect_scan",
+        command=["connect-scan", "--ports", ",".join(str(port) for port in ports)],
+        started_at=utc_now(),
+        finished_at=utc_now(),
+        return_code=0,
+    )
+    if dry_run:
+        command.skipped = True
+        command.dry_run = True
+        command.warning = "Dry-run mode; native connect scan not executed."
+        run.commands.append(command)
+        state.commands_executed.append(command)
+        run.skipped_checks.append("Native connect scan skipped in dry-run mode.")
+        if progress:
+            progress.finish_phase(phase_name, message="dry-run; native connect scan not executed")
+        _persist(latest, run, state)
+        return
+
+    result = asyncio.run(run_native_connect_scan(state.targets_loaded or [], ports, timeout=timeout, concurrency=concurrency))
+    run.metadata["native_connect_scan"] = result.to_dict()
+    if result.errors:
+        run.failed_checks.extend(result.errors)
+        state.failed_phases.extend(result.errors)
+    command.warning = f"{result.open_ports} open port(s) across {result.ports_scanned} probes at {result.ports_per_second} ports/sec"
+    run.commands.append(command)
+    state.commands_executed.append(command)
+    run.assets = _merge_assets(run.assets, result.assets)
+    state.live_hosts = sorted(set(result.open_ports_by_host) | set(state.live_hosts))
+    state.dead_hosts = sorted(set(state.targets_loaded) - set(state.live_hosts))
+    _write_live_hosts(workspace / "scans" / "live_hosts.txt", state.live_hosts)
+    state.generated_files.append(str(workspace / "scans" / "live_hosts.txt"))
+    _merge_discovery(state, result.assets)
+    _merge_ports(state, result.assets)
+    _merge_services(state, result.assets)
+    if progress:
+        _update_progress_counters(progress, state, run)
+        progress.finish_phase(phase_name, message=f"{result.open_ports} open port(s) at {result.ports_per_second} ports/sec")
+    _persist(latest, run, state)
+
+
+def _native_connect_scan_ports(scanner_cfg: dict[str, Any]) -> list[int]:
+    raw_ports = scanner_cfg.get("native_connect_scan_ports", DEFAULT_CONNECT_SCAN_PORTS)
+    if isinstance(raw_ports, str):
+        items = [part.strip() for part in raw_ports.split(",") if part.strip()]
+    else:
+        items = list(raw_ports) if isinstance(raw_ports, (list, tuple, set)) else list(DEFAULT_CONNECT_SCAN_PORTS)
+    ports: list[int] = []
+    seen: set[int] = set()
+    for item in items:
+        try:
+            port = int(item)
+        except (TypeError, ValueError):
+            continue
+        if port <= 0 or port in seen:
+            continue
+        seen.add(port)
+        ports.append(port)
+    return ports or list(DEFAULT_CONNECT_SCAN_PORTS)
 
 
 def _run_exploit_intel_phase(
@@ -509,7 +613,28 @@ def _module_config(config: PortWiseConfig, profile: Profile, *, internet_facing:
     modules = dict(config.project.get("modules", {}))
     sections = {
         key: config.raw.get(key, {})
-        for key in ("http", "tls", "dns", "snmp", "ntp", "database", "smb", "ldap", "mail", "cve", "imports", "safety", "cache")
+        for key in (
+            "http",
+            "http_politeness",
+            "http_transport",
+            "web_crawl",
+            "web_archive_discovery",
+            "web_content_fuzzer",
+            "web_param_discovery",
+            "web_template_engine",
+            "tls",
+            "dns",
+            "snmp",
+            "ntp",
+            "database",
+            "smb",
+            "ldap",
+            "mail",
+            "cve",
+            "imports",
+            "safety",
+            "cache",
+        )
         if isinstance(config.raw.get(key), dict)
     }
     merged = {**scanner, **modules, **sections}
