@@ -32,6 +32,19 @@ implemented in order, one commit per phase, tests green throughout.
 - Post-fix live testaspnet default run: 145.19 seconds total, with the complete
   durable stage table and no teardown errors.
 
+### L2 consolidated rerun
+
+- Shared-IP DNS targets are restored as logical named assets before routing;
+  expired, self-signed, and TLS-1.0 badssl checks now execute with independent
+  SNI and finding identities.
+- Windows Playwright capture/PDF use a dedicated Proactor loop and complete
+  without the selector-loop subprocess errors found on the first L2 attempt.
+- The bounded consolidated scan completed in 865.23 seconds. It produced native
+  template results, 21 screenshots, HTML/PDF output, and 106 POC artifacts.
+- The scanme Google Analytics false positive was traced to an off-origin JS
+  fetch. Same-origin enforcement removed it; targeted live revalidation
+  completed in 26.28 seconds with zero high/critical findings.
+
 - **L:** Web stages now record separate wall-clock metrics. The crawler, fuzzer,
   parameter discovery, and template engine expose independent bounded
   concurrency. Hostname mismatch has positive fixture proof. The public

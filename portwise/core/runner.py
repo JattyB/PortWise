@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import asyncio
+import ipaddress
+import socket
 from pathlib import Path
-from dataclasses import asdict
+from dataclasses import asdict, replace
 from typing import Any
 
 from portwise.core.config import PortWiseConfig, Profile
@@ -189,6 +191,7 @@ def run_scan(
     if not state.live_hosts:
         run.skipped_checks.append("No live hosts discovered.")
 
+    run.assets = _restore_named_target_assets(run.assets, state.targets_loaded)
     routes = route_assets(run.assets, probe_tls=False)
     state.module_targets = routes
     if progress:
@@ -895,6 +898,50 @@ def _service_count(assets: list[Asset]) -> int:
 
 def _services_from_assets(assets: list[Asset]) -> list[Service]:
     return [service for asset in assets for service in asset.services]
+
+
+def _restore_named_target_assets(assets: list[Asset], targets: list[str]) -> list[Asset]:
+    """Keep operator-supplied DNS names distinct when several share one IP.
+
+    Nmap reports hosts by address and may replace the input name with reverse
+    DNS. TLS and HTTP virtual-host checks require the original name for SNI,
+    Host, finding identity, and deduplication.
+    """
+    output = list(assets)
+    existing = {asset.ip.lower() for asset in assets}
+    by_ip = {asset.ip: asset for asset in assets}
+    for target in targets:
+        name = target.strip().lower().rstrip(".")
+        if not name or name in existing:
+            continue
+        try:
+            ipaddress.ip_address(name)
+            continue
+        except ValueError:
+            pass
+        try:
+            addresses = {
+                item[4][0]
+                for item in socket.getaddrinfo(name, None, type=socket.SOCK_STREAM)
+                if item[4]
+            }
+        except OSError:
+            continue
+        source = next((by_ip[address] for address in addresses if address in by_ip), None)
+        if source is None:
+            continue
+        services = [
+            replace(service, host=name, hostname=name)
+            for service in source.services
+        ]
+        output.append(Asset(
+            ip=name,
+            status=source.status,
+            hostnames=[name],
+            services=services,
+        ))
+        existing.add(name)
+    return output
 
 
 def _add_port(mapping: dict[str, list[int]], host: str, port: int) -> None:

@@ -11,6 +11,8 @@ import asyncio
 import importlib.util
 import os
 import re
+import sys
+import threading
 from collections.abc import Awaitable, Callable
 from typing import Any
 
@@ -43,6 +45,29 @@ def _playwright_available() -> bool:
 
 
 def _run_async(coro: Awaitable[None]) -> None:
+    if sys.platform == "win32":
+        # curl_cffi uses the selector policy on Windows, while Playwright needs
+        # subprocess support from a Proactor loop. Isolate browser capture in a
+        # dedicated Proactor thread instead of changing the scan's shared loop.
+        error: list[BaseException] = []
+
+        def runner() -> None:
+            loop = asyncio.ProactorEventLoop()
+            asyncio.set_event_loop(loop)
+            try:
+                loop.run_until_complete(coro)
+            except BaseException as exc:
+                error.append(exc)
+            finally:
+                loop.run_until_complete(loop.shutdown_asyncgens())
+                loop.close()
+
+        thread = threading.Thread(target=runner, name="portwise-playwright", daemon=True)
+        thread.start()
+        thread.join()
+        if error:
+            raise error[0]
+        return
     try:
         asyncio.get_running_loop()
     except RuntimeError:

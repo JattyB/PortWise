@@ -27,20 +27,20 @@ def test_pdf_renderer_contract_with_fake_playwright(monkeypatch, tmp_path: Path)
     from portwise.reporting import pdf_report
 
     class Page:
-        def goto(self, *_a, **_k): pass
-        def emulate_media(self, **_k): pass
-        def pdf(self, path, **_k): Path(path).write_bytes(b"%PDF-1.7\nfixture")
+        async def goto(self, *_a, **_k): pass
+        async def emulate_media(self, **_k): pass
+        async def pdf(self, path, **_k): Path(path).write_bytes(b"%PDF-1.7\nfixture")
     class Browser:
-        def new_page(self): return Page()
-        def close(self): pass
+        async def new_page(self): return Page()
+        async def close(self): pass
     class Chromium:
-        def launch(self, **_k): return Browser()
+        async def launch(self, **_k): return Browser()
     class Manager:
         chromium = Chromium()
     class Context:
-        def __enter__(self): return Manager()
-        def __exit__(self, *_a): pass
-    monkeypatch.setattr("playwright.sync_api.sync_playwright", lambda: Context())
+        async def __aenter__(self): return Manager()
+        async def __aexit__(self, *_a): pass
+    monkeypatch.setattr("playwright.async_api.async_playwright", lambda: Context())
     source = tmp_path / "report.html"
     source.write_text("<html>real data</html>", encoding="utf-8")
     output = pdf_report.write_pdf_report(source, tmp_path / "report.pdf")

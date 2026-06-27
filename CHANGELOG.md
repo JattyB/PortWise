@@ -23,6 +23,22 @@
 - Live default testaspnet validation completed in 145.19 seconds. Default
   templates completed 1,543 requests in 72.36 seconds (21.32 req/s).
 
+## L2 consolidated pipeline hardening
+
+- Operator-supplied DNS targets now remain distinct logical assets after Nmap
+  merges shared addresses. HTTP Host/SNI, finding identity, and deduplication
+  therefore preserve each badssl name.
+- Playwright screenshot and PDF subprocesses now run on an isolated Windows
+  Proactor loop while curl_cffi retains its selector-based shared transport.
+  This removes `NotImplementedError` task leaks during browser teardown.
+- JS analysis now fetches same-origin scripts only. The scanme validation had
+  followed Google Analytics and reported its public SDK key as a secret; the
+  off-origin fetch is now blocked and the targeted rerun is FP-free.
+- The bounded five-name pipeline completed in 865.23 seconds with independent
+  badssl SNI findings, 21 screenshots, 18 native template findings, HTML/PDF
+  reports, and 106 POC files. CVE enrichment ran but produced no version-matched
+  CVEs, so ExploitDB correctly recorded no applicable enrichment.
+
 ## Hardening and depth — Phases L–P
 
 - Added per-host web-stage wall-clock telemetry for crawl, archive, fuzz,

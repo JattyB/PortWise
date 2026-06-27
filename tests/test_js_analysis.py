@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from portwise.modules.http.js_analysis import extract_js_endpoints
+from portwise.modules.http.js_analysis import _candidate_js_urls, extract_js_endpoints
+from portwise.modules.http.surface import DiscoveredSurface
 
 
 def test_js_endpoint_extraction_fixture_precision_recall():
@@ -56,3 +57,14 @@ def test_js_endpoint_extraction_fixture_precision_recall():
     assert fp == 0, f"must-not-extract URLs were returned: {urls & must_not_extract}"
     assert precision >= 0.95, (precision, sorted(urls))
     assert recall >= 0.95, (recall, sorted(urls))
+
+
+def test_js_fetch_candidates_are_same_origin_only():
+    surface = DiscoveredSurface("app.example.test")
+    surface.js_files.update({
+        "https://app.example.test/static/app.js",
+        "https://www.google-analytics.com/analytics.js",
+    })
+    assert _candidate_js_urls(surface, "https://app.example.test/") == [
+        "https://app.example.test/static/app.js"
+    ]

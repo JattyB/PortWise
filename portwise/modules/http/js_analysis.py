@@ -58,7 +58,7 @@ async def run_js_analysis_async(
 
     started = time.perf_counter()
     base_url = _base_url(target, surface)
-    candidate_urls = _candidate_js_urls(surface)
+    candidate_urls = _candidate_js_urls(surface, base_url)
     endpoint_hits: list[JsEndpoint] = []
     texts_for_secret_scan: list[dict[str, Any]] = []
 
@@ -174,12 +174,22 @@ def _endpoint_finding(target: dict[str, Any], endpoints: list[JsEndpoint], modul
     )
 
 
-def _candidate_js_urls(surface: DiscoveredSurface) -> list[str]:
+def _candidate_js_urls(surface: DiscoveredSurface, base_url: str) -> list[str]:
     candidates = set(surface.js_files)
     for url in surface.endpoints:
         if url.lower().split("?", 1)[0].endswith(".js"):
             candidates.add(url)
-    return sorted(candidates)
+    base = urlsplit(base_url)
+    return sorted(
+        url for url in candidates
+        if (urlsplit(url).hostname or "").lower() == (base.hostname or "").lower()
+        and (urlsplit(url).port or _default_port(urlsplit(url).scheme))
+        == (base.port or _default_port(base.scheme))
+    )
+
+
+def _default_port(scheme: str) -> int:
+    return 443 if scheme.lower() == "https" else 80
 
 
 def _normalize_endpoint(candidate: str, base_url: str) -> str | None:
