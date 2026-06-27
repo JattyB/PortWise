@@ -1,5 +1,28 @@
 # Changelog
 
+## Hardening and depth — Phases L–P
+
+- Added per-host web-stage wall-clock telemetry for crawl, archive, fuzz,
+  parameter discovery, default templates, and deep templates. Crawl, fuzz, and
+  parameter engines retain independent configurable async concurrency.
+- Added stable redacted credential identifiers, configurable supplied-credential
+  validation rate, and confirmed cross-host credential-reuse findings.
+- Added a high-precision correlation pass for credential reuse and explicitly
+  linked client-secret/endpoint attack paths.
+- Added fail-closed scope allow/exclude policy support for CIDRs, hosts, and
+  domains, CLI scope files, an explicit override, and discovered-URL filtering.
+- Added PDF rendering from the self-contained pentest HTML via managed Chromium,
+  client name/logo branding, operator manual-finding injection, and persistent
+  false-positive suppression fingerprints.
+- Added deterministic fixture validation for all new paths. The existing
+  hostname-mismatch TLS fixture remains the positive proof for the deferred
+  wrong.host.badssl.com validation.
+- Known issue: the June 27 live default full-web validation against
+  testaspnet.vulnweb.com again exceeded 600 seconds before returning stage
+  metrics. The target/network path spent requests at timeout and the process was
+  terminated at 604 seconds. Fixture precision remained 1.000; live per-stage
+  throughput could not be computed from the terminated run.
+
 ## Unreleased
 
 ### E2E fixes - template sweep and Windows base install

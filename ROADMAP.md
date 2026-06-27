@@ -11,7 +11,28 @@ opt-in per engagement). That is standard scope control, not a limitation.
 This roadmap drives PortWise to professional-grade PT capability. Phases are
 implemented in order, one commit per phase, tests green throughout.
 
-**Status: Phases 0-7 complete; native rebuild Phases A-K complete.** 400 tests passing.
+**Status: Phases 0-7, native rebuild A-K, and hardening Phases L-P complete.**
+414 tests passing before the final hardening gate.
+
+## Hardening Phases L-P
+
+- **L:** Web stages now record separate wall-clock metrics. The crawler, fuzzer,
+  parameter discovery, and template engine expose independent bounded
+  concurrency. Hostname mismatch has positive fixture proof. The public
+  testaspnet default full-web run remained a known live issue: it exceeded the
+  600-second validation window before producing stage results.
+- **M:** Explicitly supplied credentials can be checked across routed HTTP and
+  SMB targets at a configurable rate. A non-reversible credential identifier
+  detects reuse across successful hosts without persisting a password.
+- **N:** Correlation emits attack-path findings only for exact credential
+  identity reuse or explicit secret-to-endpoint evidence links. Negative
+  fixtures prevent same-host coincidence from producing a chain.
+- **O:** Configured allowlists and exclusions accept CIDRs, hosts, and domains.
+  Supplied out-of-scope targets hard fail, discovered out-of-scope URLs are
+  dropped, and bypass requires the explicit scope override.
+- **P:** Reports support managed-Chromium PDF output, client name/logo branding,
+  operator-injected findings, and stable false-positive suppression files whose
+  fingerprints are honored by reporting and future configured runs.
 
 ## E2E fixes - template sweep and Windows base install
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+import time
 
 from portwise.core.models import Evidence, Finding, FindingCategory, Service, Severity
 from portwise.modules.http.cms_fingerprint import run_cms_fingerprint
@@ -213,24 +214,38 @@ class HttpEngine:
             homepage_body=body_text,
             validation_level=validation_level,
         ))
-        findings.extend(run_web_crawl(
+        def timed(stage: str, operation):
+            started = time.perf_counter()
+            try:
+                return operation()
+            finally:
+                metrics = config.setdefault("_web_stage_metrics", [])
+                if isinstance(metrics, list):
+                    metrics.append({
+                        "host": service.hostname or service.host,
+                        "port": service.port,
+                        "stage": stage,
+                        "seconds": round(time.perf_counter() - started, 4),
+                    })
+
+        findings.extend(timed("crawl", lambda: run_web_crawl(
             host=service.host, port=service.port, tls=tls,
             timeout=self.timeout, client=self.client,
             target=target_dict, config=config,
             homepage_body=body_text,
             validation_level=validation_level,
-        ))
+        )))
         archive_cfg = config.get("web_archive_discovery", {}) if isinstance(config.get("web_archive_discovery"), dict) else {}
         archive_enabled = bool(archive_cfg.get("enabled", validation_level != "recon"))
         archive_domain = service.hostname or service.host
         if archive_enabled and self._looks_domain(archive_domain):
-            findings.extend(_run_sync(run_archive_url_discovery_async(
+            findings.extend(timed("archive", lambda: _run_sync(run_archive_url_discovery_async(
                 archive_domain,
                 self.client,
                 target_dict,
                 config,
                 surface,
-            )))
+            ))))
             param_finding = paramspider_finding(surface, target_dict)
             if param_finding:
                 findings.append(param_finding)
@@ -246,31 +261,35 @@ class HttpEngine:
         fuzzer_cfg = config.get("web_content_fuzzer", {}) if isinstance(config.get("web_content_fuzzer"), dict) else {}
         fuzzer_enabled = bool(fuzzer_cfg.get("enabled", validation_level != "recon"))
         if fuzzer_enabled:
-            findings.extend(_run_sync(run_content_fuzzer_async(
+            findings.extend(timed("fuzz", lambda: _run_sync(run_content_fuzzer_async(
                 base_url=f"{'https' if tls else 'http'}://{service.host}:{service.port}/",
                 client=self.client,
                 target=target_dict,
                 config=config,
                 surface=surface,
-            )))
+            ))))
 
         param_cfg = config.get("web_param_discovery", {}) if isinstance(config.get("web_param_discovery"), dict) else {}
         params_enabled = bool(param_cfg.get("enabled", validation_level != "recon"))
         if params_enabled:
-            findings.extend(_run_sync(run_active_parameter_discovery_async(
+            findings.extend(timed("param", lambda: _run_sync(run_active_parameter_discovery_async(
                 self.client,
                 target_dict,
                 config,
                 surface,
-            )))
+            ))))
         template_cfg = config.get("web_template_engine", {}) if isinstance(config.get("web_template_engine"), dict) else {}
         templates_enabled = bool(template_cfg.get("enabled", validation_level != "recon"))
         if templates_enabled:
-            findings.extend(_run_sync(run_native_nuclei_async(
+            deep = bool(
+                template_cfg.get("selection", {}).get("deep", False)
+                if isinstance(template_cfg.get("selection"), dict) else False
+            )
+            findings.extend(timed("deep_templates" if deep else "default_templates", lambda: _run_sync(run_native_nuclei_async(
                 self.client,
                 target_dict,
                 config,
-            )).findings)
+            )).findings))
         return findings
 
     def _request(self, host: str, port: int, method: str, path: str, tls: bool) -> PoliteResponse:
