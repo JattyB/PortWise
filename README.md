@@ -134,6 +134,28 @@ Generate all reports:
 portwise report --run runs\latest.json --format all
 ```
 
+Enforce engagement scope and generate a branded PDF:
+
+```powershell
+portwise scan --targets targets.txt --profile full-vapt --config config.yaml --execute --scope-file scope.txt --exclude-file exclude.txt
+portwise report --run runs\latest.json --format pdf --client-name "Example Client" --logo client-logo.png --manual-findings manual.yaml --suppressions suppressions.yaml
+```
+
+Configured scope is fail-closed. Rules accept exact hosts, parent domains
+(including their subdomains), and CIDRs. Discovered crawl/archive URLs outside
+the allowlist or matching an exclusion are discarded. `--scope-override` is the
+explicit operator bypass.
+
+Authenticated reuse checks remain off unless `--authenticated` is supplied.
+Only `--cred`/`--cred-file` values are attempted; no guessing is performed.
+`credential_reuse.rate_per_second` controls the attempt rate. Successful reuse
+is correlated by a non-reversible identifier and secrets remain redacted.
+
+Manual findings files contain a top-level `findings:` list. Suppression files
+contain `suppressions:` with stable finding fingerprints. Suppressed findings
+remain marked `suppressed` on later reports and on scans configured with
+`false_positive_suppression.file`.
+
 Retest:
 
 ```powershell

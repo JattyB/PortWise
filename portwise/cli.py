@@ -59,6 +59,9 @@ def build_parser() -> argparse.ArgumentParser:
     scan_cmd.add_argument("--authenticated", action="store_true", help="Enable authenticated checks using supplied credentials (full depth, explicit opt-in).")
     scan_cmd.add_argument("--cred", action="append", default=[], metavar="SERVICE:USER:PASS", help="Credential for an authenticated check, e.g. web:admin:admin, smb:CORP/svc:pw, snmp::community. Repeatable.")
     scan_cmd.add_argument("--cred-file", type=Path, help="YAML file with a 'credentials:' list for authenticated checks.")
+    scan_cmd.add_argument("--scope-file", type=Path, help="Allowlist file containing CIDRs, hosts, or domains.")
+    scan_cmd.add_argument("--exclude-file", type=Path, help="Exclusion file containing CIDRs, hosts, or domains.")
+    scan_cmd.add_argument("--scope-override", action="store_true", help="Explicitly override scope enforcement for this run.")
     scan_cmd.add_argument("--polite", action="store_true", help="4× request delays and halved budget. For sensitive targets.")
     scan_cmd.add_argument("--aggressive", action="store_true", help="Reduced delays for authorized lab/CTF use only.")
     scan_cmd.add_argument("--debug", action="store_true", help="Show traceback for unexpected errors.")
@@ -76,10 +79,14 @@ def build_parser() -> argparse.ArgumentParser:
 
     report_cmd = sub.add_parser("report", help="Generate report from a run JSON.")
     report_cmd.add_argument("--run", required=True, type=Path)
-    report_cmd.add_argument("--format", choices=["json", "excel", "html", "pentest", "csv", "all"], default="json")
+    report_cmd.add_argument("--format", choices=["json", "excel", "html", "pentest", "pdf", "csv", "all"], default="json")
     report_cmd.add_argument("--output", type=Path)
     report_cmd.add_argument("--previous", type=Path, help="Previous run JSON; embeds a retest diff (Fixed/Still Open/New) in the HTML report.")
     report_cmd.add_argument("--evidence-dir", type=Path, help="Write per-finding sanitized evidence transcripts to this directory.")
+    report_cmd.add_argument("--client-name", default="", help="Client name shown on the report cover.")
+    report_cmd.add_argument("--logo", default="", help="Client logo path or data URI.")
+    report_cmd.add_argument("--manual-findings", type=Path, help="YAML/JSON operator findings to inject.")
+    report_cmd.add_argument("--suppressions", type=Path, help="Persistent false-positive suppression YAML/JSON.")
     report_cmd.add_argument("--debug", action="store_true", help="Show traceback for unexpected errors.")
 
     retest_cmd = sub.add_parser("retest", help="Compare previous and current run JSON files.")
@@ -176,6 +183,14 @@ def main(argv: list[str] | None = None) -> int:
             if args.concurrency is not None:
                 config.scanner["module_concurrency"] = max(1, args.concurrency)
             _apply_credentials(config, args)
+            if args.scope_file or args.exclude_file or args.scope_override:
+                scope = config.raw.setdefault("scope", {})
+                if args.scope_file:
+                    scope["allow_file"] = str(args.scope_file)
+                if args.exclude_file:
+                    scope["exclude_file"] = str(args.exclude_file)
+                if args.scope_override:
+                    scope["override"] = True
             if args.polite:
                 config.raw["politeness_mode"] = "polite"
             elif args.aggressive:
@@ -267,6 +282,14 @@ def main(argv: list[str] | None = None) -> int:
             with args.run.open("r", encoding="utf-8") as handle:
                 data = json.load(handle)
             report = build_json_report_from_dict(data)
+            from portwise.reporting.customization import apply_report_inputs
+            report = apply_report_inputs(
+                report,
+                manual_file=args.manual_findings,
+                suppression_file=args.suppressions,
+                client_name=args.client_name,
+                logo=args.logo,
+            )
             previous = getattr(args, "previous", None)
             if previous:
                 from portwise.reporting.retest import compare_runs
@@ -306,6 +329,17 @@ def main(argv: list[str] | None = None) -> int:
                     written.append(str(output))
                 except Exception as exc:
                     report_errors.append(f"pentest: {ensure_text(exc)}")
+            if args.format in {"pdf", "all"}:
+                from portwise.reporting.pdf_report import write_pdf_report
+                html_source = output_dir / "PortWise_Pentest_Report.html"
+                if not html_source.exists():
+                    write_pentest_report(report, html_source)
+                output = args.output if args.format == "pdf" and args.output else output_dir / "PortWise_Pentest_Report.pdf"
+                try:
+                    write_pdf_report(html_source, output)
+                    written.append(str(output))
+                except Exception as exc:
+                    report_errors.append(f"pdf: {ensure_text(exc)}")
             if args.format in {"csv", "all"}:
                 from portwise.reporting.csv_report import write_csv_report
                 output = args.output if args.format == "csv" and args.output else output_dir / "PortWise_Report.csv"
