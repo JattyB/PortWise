@@ -16,6 +16,13 @@ implemented in order, one commit per phase, tests green throughout.
 
 ## Hardening Phases L-P
 
+### L1 diagnostic follow-up
+
+- Durable isolated stage profiling is available through
+  `python -m portwise.modules.http.stage_profiler`. Every stage has an
+  independent cap and immediately persists wall-clock, request count, req/s,
+  completion state, and error text.
+
 - **L:** Web stages now record separate wall-clock metrics. The crawler, fuzzer,
   parameter discovery, and template engine expose independent bounded
   concurrency. Hostname mismatch has positive fixture proof. The public

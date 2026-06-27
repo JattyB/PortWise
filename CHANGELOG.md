@@ -1,5 +1,13 @@
 # Changelog
 
+## L1 diagnostic telemetry
+
+- Added an isolated native web-stage profiler with a hard per-stage cap.
+- Crawl, archive, fuzz, parameter discovery, default templates, and deep
+  templates now produce independent wall-clock, request-count, and req/s rows.
+- Each row is appended and flushed to JSONL immediately and printed, preserving
+  completed/capped measurements if a later stage or outer run is terminated.
+
 ## Hardening and depth — Phases L–P
 
 - Added per-host web-stage wall-clock telemetry for crawl, archive, fuzz,
