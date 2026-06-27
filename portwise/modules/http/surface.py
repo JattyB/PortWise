@@ -18,6 +18,7 @@ class DiscoveredEndpoint:
 @dataclass(slots=True)
 class DiscoveredSurface:
     target_key: str
+    scope_policy: Any | None = None
     endpoints: dict[str, DiscoveredEndpoint] = field(default_factory=dict)
     parameters: dict[str, set[str]] = field(default_factory=dict)
     forms: list[dict[str, Any]] = field(default_factory=list)
@@ -27,6 +28,8 @@ class DiscoveredSurface:
 
     def add_url(self, url: str, source: str, method: str = "GET", status: int | None = None, depth: int = 0) -> str:
         normalized = normalize_url(url)
+        if self.scope_policy is not None and not self.scope_policy.permits(normalized):
+            return ""
         parsed = urlsplit(normalized)
         params = {name for name, _ in parse_qsl(parsed.query, keep_blank_values=True)}
         existing = self.endpoints.get(normalized)
@@ -103,6 +106,10 @@ def surface_from_config(config: dict[str, Any], key: str) -> DiscoveredSurface:
     surface = bucket.get(key)
     if isinstance(surface, DiscoveredSurface):
         return surface
-    surface = DiscoveredSurface(target_key=key)
+    from portwise.core.scope import policy_from_config
+    surface = DiscoveredSurface(
+        target_key=key,
+        scope_policy=policy_from_config(config) if "scope" in config else None,
+    )
     bucket[key] = surface
     return surface
