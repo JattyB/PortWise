@@ -197,6 +197,7 @@ def run_scan(
     if progress:
         progress.finish_phase("Module routing", message=f"{sum(len(v) for v in routes.values())} routed target entries")
     module_config = _module_config(config, profile, internet_facing=internet_facing)
+    module_config["_web_stage_metrics_path"] = str(workspace / "runs" / "web-stage-metrics.jsonl")
     if no_modules:
         state.skipped_phases.append("modules: Disabled by --no-modules.")
         if progress:

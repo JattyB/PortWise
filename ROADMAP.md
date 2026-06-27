@@ -22,6 +22,15 @@ implemented in order, one commit per phase, tests green throughout.
   `python -m portwise.modules.http.stage_profiler`. Every stage has an
   independent cap and immediately persists wall-clock, request count, req/s,
   completion state, and error text.
+- Root cause fixed: crawler workers previously exited while the first request
+  was still producing links, and a timed-out request killed its worker while
+  queued work remained, causing `queue.join()` to wait indefinitely. Safe paths
+  were also serialized before stage telemetry began.
+- The crawler and safe-path probes now use bounded concurrency and explicit
+  time budgets. Async stages remain on the shared transport's owning event loop.
+  The non-deep aggregate host budget defaults to 300 seconds.
+- Post-fix live testaspnet default run: 145.19 seconds total, with the complete
+  durable stage table and no teardown errors.
 
 - **L:** Web stages now record separate wall-clock metrics. The crawler, fuzzer,
   parameter discovery, and template engine expose independent bounded

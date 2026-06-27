@@ -7,6 +7,21 @@
   templates now produce independent wall-clock, request-count, and req/s rows.
 - Each row is appended and flushed to JSONL immediately and printed, preserving
   completed/capped measurements if a later stage or outer run is terminated.
+- Diagnosis identified crawler worker loss/deadlock on request failures and
+  premature idle-worker exit. Workers now remain available for discovered
+  links, failed requests cannot strand queue items, and JavaScript fetches use
+  the crawler's bounded concurrency.
+- Crawler requests default to zero transport retries and enforce a Python-level
+  total timeout. Repeated failed Playwright challenge attempts are suppressed
+  per host.
+- Safe-path probes now run concurrently under a 60-second budget. All web
+  stages run on the shared client's owning loop, eliminating cross-loop session
+  teardown and template-limit resize deadlocks.
+- Default non-deep runs have a configurable 300-second per-host aggregate
+  budget plus stage-specific caps. Budget exhaustion is persisted and printed
+  as `stage time-budget reached`.
+- Live default testaspnet validation completed in 145.19 seconds. Default
+  templates completed 1,543 requests in 72.36 seconds (21.32 req/s).
 
 ## Hardening and depth — Phases L–P
 

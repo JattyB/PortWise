@@ -16,7 +16,7 @@ class _Client:
 
 def test_http_engine_records_stage_timings(monkeypatch):
     from portwise.core.models import Service
-    monkeypatch.setattr("portwise.modules.http.http_engine.run_web_crawl", lambda **_: [])
+    monkeypatch.setattr("portwise.modules.http.http_engine.run_web_crawl_async", _empty_async)
     monkeypatch.setattr("portwise.modules.http.http_engine.run_content_discovery", lambda **_: [])
     monkeypatch.setattr("portwise.modules.http.http_engine.run_cms_fingerprint", lambda **_: [])
     monkeypatch.setattr("portwise.modules.http.http_engine.run_injection_indicators", lambda **_: [])

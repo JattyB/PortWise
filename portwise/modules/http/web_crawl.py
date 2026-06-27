@@ -87,6 +87,7 @@ class AsyncWebCrawler:
         concurrency: int = 5,
         max_js: int = 20,
         body_limit: int = 120_000,
+        max_retries: int = 0,
     ) -> None:
         self.client = client
         self.timeout = timeout
@@ -95,6 +96,7 @@ class AsyncWebCrawler:
         self.concurrency = concurrency
         self.max_js = max_js
         self.body_limit = body_limit
+        self.max_retries = max(0, max_retries)
 
     async def crawl(self, base_url: str, homepage_body: str = "") -> CrawlResult:
         started = time.perf_counter()
@@ -107,18 +109,18 @@ class AsyncWebCrawler:
 
         async def worker() -> None:
             while len(result.pages) < self.max_pages:
-                try:
-                    url, depth, preloaded = await asyncio.wait_for(queue.get(), timeout=0.1)
-                except asyncio.TimeoutError:
-                    return
+                url, depth, preloaded = await queue.get()
                 normalized = normalize_url(url)
                 if normalized in seen or depth > self.max_depth or _blocked_by_robots(normalized, robots):
                     queue.task_done()
                     continue
                 seen.add(normalized)
                 try:
-                    async with semaphore:
-                        status, body, final_url = await self._fetch_page(normalized, preloaded)
+                    try:
+                        async with semaphore:
+                            status, body, final_url = await self._fetch_page(normalized, preloaded)
+                    except Exception:
+                        continue
                     result.requests += 0 if preloaded is not None else 1
                     if final_url and not _same_origin(final_url, result.base_url):
                         result.skipped_off_origin_redirects.append(final_url)
@@ -141,18 +143,26 @@ class AsyncWebCrawler:
             task.cancel()
         await asyncio.gather(*workers, return_exceptions=True)
 
-        js_to_fetch = [js for js in sorted(result.js_files) if _same_origin(js, result.base_url)]
-        for js_url in js_to_fetch[: self.max_js]:
-            if len(result.pages) >= self.max_pages + self.max_js:
-                break
+        js_to_fetch = [js for js in sorted(result.js_files) if _same_origin(js, result.base_url)][: self.max_js]
+
+        async def fetch_js(js_url: str) -> CrawledPage | None:
             try:
                 status, body, _ = await self._fetch_page(js_url, None)
             except Exception:
-                continue
-            result.requests += 1
-            page = CrawledPage(js_url, status, self.max_depth + 1, body)
-            result.pages.append(page)
-            self._extract_body_signals(js_url, body, result)
+                return None
+            return CrawledPage(js_url, status, self.max_depth + 1, body)
+
+        js_semaphore = asyncio.Semaphore(max(1, self.concurrency))
+
+        async def bounded_fetch(js_url: str) -> CrawledPage | None:
+            async with js_semaphore:
+                return await fetch_js(js_url)
+
+        for page in await asyncio.gather(*(bounded_fetch(url) for url in js_to_fetch)):
+            if page is not None:
+                result.requests += 1
+                result.pages.append(page)
+                self._extract_body_signals(page.url, page.body, result)
 
         result.elapsed_s = time.perf_counter() - started
         return result
@@ -160,14 +170,18 @@ class AsyncWebCrawler:
     async def _fetch_page(self, url: str, preloaded: str | None) -> tuple[int, str, str]:
         if preloaded is not None:
             return 200, preloaded, url
-        response = await _request_url_compat(self.client, url, timeout=self.timeout, allow_redirects=False)
+        response = await _request_url_compat(
+            self.client, url, timeout=self.timeout, allow_redirects=False, max_retries=self.max_retries,
+        )
         if 300 <= response.status < 400:
             location = response.getheader("Location", "")
             if location:
                 redirect = normalize_url(urljoin(url, location))
                 if not _same_origin(redirect, url):
                     return response.status, "", redirect
-                response = await _request_url_compat(self.client, redirect, timeout=self.timeout, allow_redirects=False)
+                response = await _request_url_compat(
+                    self.client, redirect, timeout=self.timeout, allow_redirects=False, max_retries=self.max_retries,
+                )
                 url = redirect
         body = response.read(self.body_limit).decode("utf-8", errors="replace")
         return response.status, body, url
@@ -175,7 +189,9 @@ class AsyncWebCrawler:
     async def _robots_disallow(self, base_url: str) -> set[str]:
         robots_url = urljoin(base_url, "/robots.txt")
         try:
-            response = await _request_url_compat(self.client, robots_url, timeout=self.timeout, allow_redirects=True)
+            response = await _request_url_compat(
+                self.client, robots_url, timeout=self.timeout, allow_redirects=True, max_retries=self.max_retries,
+            )
         except Exception:
             return set()
         if response.status >= 400:
@@ -230,6 +246,7 @@ async def run_web_crawl_async(
         max_depth=int(crawl_cfg.get("max_depth", 2)),
         concurrency=int(crawl_cfg.get("concurrency", 5)),
         max_js=int(crawl_cfg.get("max_js", 20)),
+        max_retries=int(crawl_cfg.get("max_retries", 0)),
     )
     result = await crawler.crawl(base, homepage_body=homepage_body)
     surface = surface_from_config(config, surface_key(host, port))
@@ -345,10 +362,19 @@ def _crawl_findings(result: CrawlResult, target: dict[str, Any], module: str) ->
     return findings
 
 
-async def _request_url_compat(client: PoliteHttpClient, url: str, timeout: float, allow_redirects: bool) -> PoliteResponse:
+async def _request_url_compat(
+    client: PoliteHttpClient,
+    url: str,
+    timeout: float,
+    allow_redirects: bool,
+    max_retries: int = 0,
+) -> PoliteResponse:
     request_url_async = getattr(client, "request_url_async", None)
     if request_url_async:
-        return await request_url_async(url, timeout=timeout, allow_redirects=allow_redirects)
+        async with asyncio.timeout(timeout):
+            return await request_url_async(
+                url, timeout=timeout, allow_redirects=allow_redirects, max_retries=max_retries,
+            )
     parsed = urlparse(url)
     path = parsed.path or "/"
     if parsed.query:

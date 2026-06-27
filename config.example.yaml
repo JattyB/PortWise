@@ -64,6 +64,14 @@ scanner:
     enabled: true
     max_pages: 8
     max_js: 10
+    concurrency: 5
+    max_retries: 0
+    time_budget_seconds: 60
+  # Aggregate native web-stage budget per host. Non-deep default runs stop
+  # cleanly at this boundary and persist the completed/capped stage table.
+  web_per_host_budget_seconds: 300
+  web_safe_path_concurrency: 10
+  web_safe_path_budget_seconds: 60
   ssh_algo_probe: true
   smb_native_probe: true
 
@@ -120,6 +128,7 @@ web_template_engine:
   min_delay_seconds: 0.02
   jitter_min_seconds: 0.0
   jitter_max_seconds: 0.03
+  time_budget_seconds: 120
   selection:
     enabled: true
     # Default runs include stack-matched templates plus a small critical

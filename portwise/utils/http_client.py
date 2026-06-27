@@ -257,6 +257,7 @@ class CurlCffiTransport:
         self._semaphore: asyncio.Semaphore | None = None
         self._profile_index = 0
         self._playwright_cookies: dict[str, dict[str, str]] = {}
+        self._playwright_attempted_hosts: set[str] = set()
 
     async def close(self) -> None:
         if self._session is not None:
@@ -323,7 +324,9 @@ class CurlCffiTransport:
             allow_playwright
             and self.config.playwright_fallback
             and _looks_js_challenge(result.status, result.headers, result.body)
+            and (host_key or "") not in self._playwright_attempted_hosts
         ):
+            self._playwright_attempted_hosts.add(host_key or "")
             solved = await self._solve_with_playwright(url, request_headers, timeout, host_key or "")
             if solved:
                 retry = await self.request(
@@ -564,6 +567,7 @@ class PoliteHttpClient:
         extra_headers: dict[str, str] | None = None,
         body: str | bytes | None = None,
         allow_redirects: bool = True,
+        max_retries: int | None = None,
     ) -> PoliteResponse:
         host_header = host_header or self.vhost
         sni = sni or self.sni
@@ -588,7 +592,8 @@ class PoliteHttpClient:
         t_start = time.monotonic()
         last_exc: Exception | None = None
 
-        for attempt in range(self.config.max_retries + 1):
+        retries = self.config.max_retries if max_retries is None else max(0, int(max_retries))
+        for attempt in range(retries + 1):
             try:
                 result = await self._execute_request(
                     method=method,
@@ -613,7 +618,7 @@ class PoliteHttpClient:
                     "blocked": result.blocked,
                 }
                 if _is_rate_limited(result.status, result.headers, result.body):
-                    if attempt < self.config.max_retries:
+                    if attempt < retries:
                         await asyncio.sleep(self._compute_backoff(attempt, result.headers))
                         continue
                     if self._record_rate_limit(host):
@@ -629,7 +634,7 @@ class PoliteHttpClient:
                 if "[PortWise]" in str(exc):
                     raise
                 last_exc = exc
-                if attempt < self.config.max_retries:
+                if attempt < retries:
                     await asyncio.sleep(self._compute_backoff(attempt, []))
                     continue
                 raise
@@ -644,6 +649,7 @@ class PoliteHttpClient:
         body: str | bytes | None = None,
         timeout: float = 10.0,
         allow_redirects: bool = True,
+        max_retries: int | None = None,
     ) -> PoliteResponse:
         return self._run_coroutine_sync(self.request_url_async(
             url,
@@ -652,6 +658,7 @@ class PoliteHttpClient:
             body=body,
             timeout=timeout,
             allow_redirects=allow_redirects,
+            max_retries=max_retries,
         ))
 
     async def request_url_async(
@@ -662,6 +669,7 @@ class PoliteHttpClient:
         body: str | bytes | None = None,
         timeout: float = 10.0,
         allow_redirects: bool = True,
+        max_retries: int | None = None,
     ) -> PoliteResponse:
         parsed = urlsplit(url)
         if parsed.scheme not in {"http", "https"} or not parsed.hostname:
@@ -682,6 +690,7 @@ class PoliteHttpClient:
             extra_headers=headers,
             body=body,
             allow_redirects=allow_redirects,
+            max_retries=max_retries,
         )
 
     def _run_coroutine_sync(self, coro):

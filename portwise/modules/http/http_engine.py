@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 import time
+from pathlib import Path
 
 from portwise.core.models import Evidence, Finding, FindingCategory, Service, Severity
 from portwise.modules.http.cms_fingerprint import run_cms_fingerprint
@@ -15,7 +16,8 @@ from portwise.modules.http.param_discovery import paramspider_finding, run_activ
 from portwise.modules.http.signatures import has_password_form, match_admin_panel, match_default_install
 from portwise.modules.http.surface import surface_from_config, surface_key
 from portwise.modules.http.tech_fingerprint import detect_technologies, technology_finding
-from portwise.modules.http.web_crawl import run_web_crawl
+from portwise.modules.http.web_crawl import run_web_crawl_async
+from portwise.modules.http.stage_metrics import DurableStageRecorder, measure_stage
 from portwise.scanners.nse import nse_http_methods
 from portwise.utils.http_client import PoliteHttpClient, PoliteResponse, _run_sync
 
@@ -104,7 +106,12 @@ class HttpEngine:
         findings.extend(self._header_findings(service, headers, tls))
         findings.extend(self._cookie_findings(service, get.getheaders()))
         findings.extend(self._method_findings(service, options))
-        findings.extend(self._safe_path_findings(service, tls))
+        findings.extend(self._run_async(self._safe_path_findings_async(
+            service,
+            tls,
+            concurrency=int(config.get("web_safe_path_concurrency", 10)),
+            budget_seconds=float(config.get("web_safe_path_budget_seconds", 60)),
+        )))
 
         body_text = get.read(self.max_body).decode("utf-8", errors="ignore")
         title = self._extract_title_from_body(body_text)
@@ -214,43 +221,81 @@ class HttpEngine:
             homepage_body=body_text,
             validation_level=validation_level,
         ))
-        def timed(stage: str, operation):
-            started = time.perf_counter()
-            try:
-                return operation()
-            finally:
-                metrics = config.setdefault("_web_stage_metrics", [])
-                if isinstance(metrics, list):
-                    metrics.append({
-                        "host": service.hostname or service.host,
-                        "port": service.port,
-                        "stage": stage,
-                        "seconds": round(time.perf_counter() - started, 4),
-                    })
+        metrics_path = config.get("_web_stage_metrics_path")
+        recorder = DurableStageRecorder(Path(str(metrics_path)) if metrics_path else None)
+        host_budget = float(config.get(
+            "web_per_host_budget_seconds",
+            600 if bool(config.get("web_template_engine", {}).get("selection", {}).get("deep", False)) else 300,
+        ))
+        web_started = time.perf_counter()
 
-        findings.extend(timed("crawl", lambda: run_web_crawl(
+        def request_count() -> int:
+            counts = getattr(self.client, "_request_count", {})
+            return sum(counts.values()) if isinstance(counts, dict) else 0
+
+        def timed_async(stage: str, factory, default):
+            remaining = max(0.001, host_budget - (time.perf_counter() - web_started))
+            stage_cfg = config.get(f"web_{stage}", {})
+            default_caps = {
+                "crawl": 60.0,
+                "archive": 30.0,
+                "fuzz": 60.0,
+                "param": 60.0,
+                "default_templates": 120.0,
+                "deep_templates": 300.0,
+            }
+            configured_cap = (
+                float(stage_cfg.get("time_budget_seconds", default_caps.get(stage, remaining)))
+                if isinstance(stage_cfg, dict) else remaining
+            )
+            cap = min(remaining, configured_cap)
+            value = self._run_async(measure_stage(
+                host=service.hostname or service.host,
+                stage=stage,
+                operation=factory,
+                request_count=request_count,
+                recorder=recorder,
+                cap_seconds=cap,
+            ))
+            row = recorder.rows[-1]
+            config.setdefault("_web_stage_metrics", []).append({
+                "host": row.host,
+                "port": service.port,
+                "stage": row.stage,
+                "status": row.status,
+                "seconds": row.seconds,
+                "requests": row.requests,
+                "req_s": row.req_s,
+                "error": row.error,
+            })
+            if value is None:
+                config.setdefault("_web_stage_notes", []).append(f"{stage}: stage time-budget reached")
+                return default
+            return value
+
+        findings.extend(timed_async("crawl", lambda: run_web_crawl_async(
             host=service.host, port=service.port, tls=tls,
             timeout=self.timeout, client=self.client,
             target=target_dict, config=config,
             homepage_body=body_text,
             validation_level=validation_level,
-        )))
+        ), []))
         archive_cfg = config.get("web_archive_discovery", {}) if isinstance(config.get("web_archive_discovery"), dict) else {}
         archive_enabled = bool(archive_cfg.get("enabled", validation_level != "recon"))
         archive_domain = service.hostname or service.host
         if archive_enabled and self._looks_domain(archive_domain):
-            findings.extend(timed("archive", lambda: _run_sync(run_archive_url_discovery_async(
+            findings.extend(timed_async("archive", lambda: run_archive_url_discovery_async(
                 archive_domain,
                 self.client,
                 target_dict,
                 config,
                 surface,
-            ))))
+            ), []))
             param_finding = paramspider_finding(surface, target_dict)
             if param_finding:
                 findings.append(param_finding)
 
-        findings.extend(_run_sync(run_js_analysis_async(
+        findings.extend(self._run_async(run_js_analysis_async(
             client=self.client,
             target=target_dict,
             config=config,
@@ -261,23 +306,23 @@ class HttpEngine:
         fuzzer_cfg = config.get("web_content_fuzzer", {}) if isinstance(config.get("web_content_fuzzer"), dict) else {}
         fuzzer_enabled = bool(fuzzer_cfg.get("enabled", validation_level != "recon"))
         if fuzzer_enabled:
-            findings.extend(timed("fuzz", lambda: _run_sync(run_content_fuzzer_async(
+            findings.extend(timed_async("fuzz", lambda: run_content_fuzzer_async(
                 base_url=f"{'https' if tls else 'http'}://{service.host}:{service.port}/",
                 client=self.client,
                 target=target_dict,
                 config=config,
                 surface=surface,
-            ))))
+            ), []))
 
         param_cfg = config.get("web_param_discovery", {}) if isinstance(config.get("web_param_discovery"), dict) else {}
         params_enabled = bool(param_cfg.get("enabled", validation_level != "recon"))
         if params_enabled:
-            findings.extend(timed("param", lambda: _run_sync(run_active_parameter_discovery_async(
+            findings.extend(timed_async("param", lambda: run_active_parameter_discovery_async(
                 self.client,
                 target_dict,
                 config,
                 surface,
-            ))))
+            ), []))
         template_cfg = config.get("web_template_engine", {}) if isinstance(config.get("web_template_engine"), dict) else {}
         templates_enabled = bool(template_cfg.get("enabled", validation_level != "recon"))
         if templates_enabled:
@@ -285,15 +330,21 @@ class HttpEngine:
                 template_cfg.get("selection", {}).get("deep", False)
                 if isinstance(template_cfg.get("selection"), dict) else False
             )
-            findings.extend(timed("deep_templates" if deep else "default_templates", lambda: _run_sync(run_native_nuclei_async(
+            template_result = timed_async("deep_templates" if deep else "default_templates", lambda: run_native_nuclei_async(
                 self.client,
                 target_dict,
                 config,
-            )).findings))
+            ), None)
+            if template_result is not None:
+                findings.extend(template_result.findings)
         return findings
 
     def _request(self, host: str, port: int, method: str, path: str, tls: bool) -> PoliteResponse:
         return self.client.request(host, port, method, path, tls, timeout=self.timeout)
+
+    def _run_async(self, coroutine):
+        runner = getattr(self.client, "_run_coroutine_sync", None)
+        return runner(coroutine) if runner else _run_sync(coroutine)
 
     @staticmethod
     def _extract_title_from_body(body: str) -> str:
@@ -454,6 +505,70 @@ class HttpEngine:
                 category=category,
             ))
         return findings
+
+    async def _safe_path_findings_async(
+        self,
+        service: Service,
+        tls: bool,
+        *,
+        concurrency: int = 10,
+        budget_seconds: float = 60,
+    ) -> list[Finding]:
+        import asyncio
+
+        semaphore = asyncio.Semaphore(max(1, concurrency))
+
+        async def check(path: str) -> Finding | None:
+            if self.client.is_tripped(service.host):
+                return None
+            try:
+                async with semaphore:
+                    request_async = getattr(self.client, "request_async", None)
+                    if request_async:
+                        response = await request_async(
+                            service.host, service.port, "GET", path, tls, timeout=self.timeout,
+                        )
+                    else:
+                        response = await asyncio.to_thread(
+                            self._request, service.host, service.port, "GET", path, tls,
+                        )
+            except (OSError, TimeoutError):
+                return None
+            if response.status not in {200, 401, 403}:
+                return None
+            body = response.read(self.max_body).decode("utf-8", errors="ignore")
+            title, severity, category = self._path_title(path, response.status, body)
+            if not title:
+                return None
+            evidence = Evidence(
+                "http-safe-path",
+                f"Safe GET returned HTTP {response.status}.",
+                5,
+                {"path": path, "status": response.status, "sample": body[:200]},
+            )
+            return Finding(
+                title=title,
+                severity=severity,
+                asset=service.host,
+                port=service.port,
+                protocol=service.protocol,
+                service=service.service_name,
+                description="A common administrative or diagnostic path responded to a safe GET request.",
+                recommendation="Confirm business need and restrict access where appropriate.",
+                evidence_strength=5,
+                type="http-exposure",
+                module="http",
+                evidence=[evidence],
+                tags=["safe-active"],
+                category=category,
+            )
+
+        try:
+            async with asyncio.timeout(max(0.001, budget_seconds)):
+                rows = await asyncio.gather(*(check(path) for path in self.paths))
+        except TimeoutError:
+            return []
+        return [row for row in rows if row is not None]
 
     @staticmethod
     def _path_title(path: str, status: int, body: str) -> tuple[str | None, Severity, FindingCategory]:

@@ -1,4 +1,6 @@
-from portwise.modules.http.web_crawl import run_web_crawl, _redact, _same_origin
+import asyncio
+
+from portwise.modules.http.web_crawl import AsyncWebCrawler, run_web_crawl, _redact, _same_origin
 
 
 class _Resp:
@@ -47,3 +49,41 @@ def test_crawl_disabled_at_recon_level():
     findings = run_web_crawl("h", 443, True, 2.0, _Client({}), {"host":"h","port":443}, {}, "<html></html>",
                              validation_level="recon")
     assert findings == []
+
+
+def test_discovered_links_use_real_worker_concurrency():
+    class AsyncClient:
+        def __init__(self):
+            self.active = 0
+            self.peak = 0
+
+        async def request_url_async(self, url, **kwargs):
+            self.active += 1
+            self.peak = max(self.peak, self.active)
+            await asyncio.sleep(0.02)
+            self.active -= 1
+            if url.endswith("/robots.txt"):
+                return _Resp(404)
+            return _Resp(200, b"ok")
+
+    client = AsyncClient()
+    homepage = "".join(f'<a href="/page-{index}">x</a>' for index in range(8))
+    result = asyncio.run(AsyncWebCrawler(
+        client, concurrency=4, max_pages=9, max_depth=1,
+    ).crawl("http://example.test/", homepage_body=homepage))
+    assert result.requests == 8
+    assert client.peak >= 3
+
+
+def test_failed_fetches_do_not_kill_workers_and_deadlock_queue():
+    class FailingClient:
+        async def request_url_async(self, url, **kwargs):
+            if url.endswith("/robots.txt"):
+                return _Resp(404)
+            raise TimeoutError("fixture timeout")
+
+    result = asyncio.run(asyncio.wait_for(
+        AsyncWebCrawler(FailingClient(), concurrency=3).crawl("http://example.test/"),
+        timeout=0.5,
+    ))
+    assert result.pages == []

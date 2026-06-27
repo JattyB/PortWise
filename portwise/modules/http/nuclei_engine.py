@@ -923,16 +923,14 @@ async def _apply_template_client_limits(client: PoliteHttpClient, config: dict[s
             transport_config.jitter_max = new_jitter_max
 
     if changed:
-        close_sync = getattr(client, "close_sync", None)
-        sync_loop = getattr(client, "_sync_loop", None)
-        if callable(close_sync) and sync_loop is not None:
-            close_sync()
-        else:
-            close = getattr(client, "close", None)
-            if close is not None:
-                maybe = close()
-                if hasattr(maybe, "__await__"):
-                    await maybe
+        # This helper runs inside the client's active event loop. Calling
+        # close_sync() here waits on that same loop and deadlocks. Await the
+        # async lifecycle directly so the resized session is recreated cleanly.
+        close = getattr(client, "close", None)
+        if close is not None:
+            maybe = close()
+            if hasattr(maybe, "__await__"):
+                await maybe
 
     async def restore() -> None:
         for key, value in old_values.items():
