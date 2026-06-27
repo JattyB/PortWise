@@ -7,6 +7,7 @@ read-only Kerberos requests through impacket.
 from __future__ import annotations
 
 import base64
+import time
 from urllib.parse import urlencode
 
 from portwise.core.models import Confidence, Evidence, Finding, FindingCategory, Severity
@@ -82,16 +83,18 @@ def web_form_login(
 
 def run_web_auth(
     client: PoliteHttpClient, host: str, port: int, tls: bool,
-    creds: list[Credential], *, timeout: float = 6.0,
+    creds: list[Credential], *, timeout: float = 6.0, rate_per_second: float = 1.0,
 ) -> list[Finding]:
     findings: list[Finding] = []
-    for cred in creds:
+    for index, cred in enumerate(creds):
+        if index and rate_per_second > 0:
+            time.sleep(1.0 / rate_per_second)
         if web_basic_auth(client, host, port, tls, cred, timeout=timeout):
             findings.append(_auth_finding(
                 "Authenticated Access - HTTP Basic Credentials Accepted", Severity.HIGH,
                 host, port,
                 f"Supplied HTTP Basic credentials ({cred.redacted()}) were accepted by the web service.",
-                evidence_data={"method": "basic", "user": cred.username},
+                evidence_data={"method": "basic", "user": cred.username, "credential_id": cred.identity()},
             ))
             continue
         if cred.password and web_form_login(client, host, port, tls, cred, timeout=timeout):
@@ -100,7 +103,7 @@ def run_web_auth(
                 host, port,
                 f"Supplied credentials ({cred.redacted()}) appear to establish an authenticated session via form login at {cred.login_url or '/login'}.",
                 confidence=Confidence.LIKELY, strength=4,
-                evidence_data={"method": "form", "user": cred.username, "login_url": cred.login_url or "/login"},
+                evidence_data={"method": "form", "user": cred.username, "login_url": cred.login_url or "/login", "credential_id": cred.identity()},
             ))
     return findings
 
@@ -115,6 +118,7 @@ def run_smb_auth(
     kdc_host: str = "",
     tgs_requester: KerberosRequester | None = None,
     asrep_requester: KerberosRequester | None = None,
+    rate_per_second: float = 1.0,
 ) -> tuple[list[Finding], list[str]]:
     """Authenticated SMB/AD checks through impacket. Returns (findings, notes)."""
     findings: list[Finding] = []
@@ -125,7 +129,9 @@ def run_smb_auth(
         return findings, notes
     tgs_requester = tgs_requester or request_tgs_with_impacket
     asrep_requester = asrep_requester or request_asrep_with_impacket
-    for cred in creds:
+    for index, cred in enumerate(creds):
+        if index and rate_per_second > 0:
+            time.sleep(1.0 / rate_per_second)
         result = authenticated_smb_access(host, cred, conn_factory=conn_factory)
         if result.accepted:
             share_names = sorted(share.name for share in result.shares if share.name)
@@ -134,7 +140,7 @@ def run_smb_auth(
                 "Authenticated Access - SMB Login Succeeded", sev, host, 445,
                 f"Supplied SMB credentials ({cred.redacted()}) authenticated successfully"
                 + (" and exposed administrative shares." if result.admin else "."),
-                evidence_data={"method": "smb", "user": cred.username, "domain": cred.domain, "admin": result.admin, "shares": share_names},
+                evidence_data={"method": "smb", "user": cred.username, "domain": cred.domain, "credential_id": cred.identity(), "admin": result.admin, "shares": share_names},
             ))
             notes.append(f"smb-auth: impacket session established for {cred.redacted()}")
         else:

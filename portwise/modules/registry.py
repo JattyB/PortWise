@@ -1451,7 +1451,12 @@ def _run_web_auth_checks(target: dict[str, Any], config: dict[str, Any], client:
     host = str(target["host"])
     port = int(target["port"])
     tls = port in {443, 8443, 9443, 4443, 5443, 7443, 10443} or "https" in str(target.get("service", "")).lower() or "tls" in str(target.get("routing_reason", "")).lower()
-    findings = run_web_auth(client, host, port, tls, creds, timeout=float(config.get("timeout", 6)))
+    reuse_cfg = config.get("credential_reuse", {}) if isinstance(config.get("credential_reuse"), dict) else {}
+    findings = run_web_auth(
+        client, host, port, tls, creds,
+        timeout=float(config.get("timeout", 6)),
+        rate_per_second=float(reuse_cfg.get("rate_per_second", 1.0)),
+    )
     for f in findings:
         f.module = "http"
     return findings
@@ -1550,7 +1555,11 @@ def _run_smb_auth_checks(target: dict[str, Any], config: dict[str, Any]) -> list
     creds = credentials_for(config, "smb")
     if not creds:
         return []
-    findings, notes = run_smb_auth(str(target["host"]), creds)
+    reuse_cfg = config.get("credential_reuse", {}) if isinstance(config.get("credential_reuse"), dict) else {}
+    findings, notes = run_smb_auth(
+        str(target["host"]), creds,
+        rate_per_second=float(reuse_cfg.get("rate_per_second", 1.0)),
+    )
     if any(note.startswith("AD/SMB checks unavailable: impacket could not load (blocked or not importable)") for note in notes):
         findings.append(_impacket_unavailable_finding("smb", target, "Authenticated SMB/AD checks"))
     for f in findings:

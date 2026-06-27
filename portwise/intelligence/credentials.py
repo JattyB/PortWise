@@ -8,6 +8,7 @@ invents or guesses credentials — only the operator's supplied set is used.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+import hashlib
 from typing import Any
 
 
@@ -28,6 +29,11 @@ class Credential:
         if self.community:
             return f"{self.service}: community=<redacted>"
         return f"{self.service}: {who or '(no user)'}:<redacted>"
+
+    def identity(self) -> str:
+        """Stable non-reversible identifier used to correlate supplied credentials."""
+        material = "\0".join((self.domain.lower(), self.username.lower(), self.password, self.community))
+        return hashlib.sha256(material.encode("utf-8")).hexdigest()[:16]
 
 
 def authenticated_enabled(config: dict[str, Any]) -> bool:
