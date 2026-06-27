@@ -29,8 +29,9 @@ implemented in order, one commit per phase, tests green throughout.
 - The crawler and safe-path probes now use bounded concurrency and explicit
   time budgets. Async stages remain on the shared transport's owning event loop.
   The non-deep aggregate host budget defaults to 300 seconds.
-- Post-fix live testaspnet default run: 145.19 seconds total, with the complete
-  durable stage table and no teardown errors.
+- Final post-fix live testaspnet default run: 291.99 seconds total, with active
+  requests in every stage, a complete durable table, and no teardown errors.
+  It stays below the five-minute host budget; capped stages emit explicit notes.
 
 ### L2 consolidated rerun
 

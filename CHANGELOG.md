@@ -20,8 +20,11 @@
 - Default non-deep runs have a configurable 300-second per-host aggregate
   budget plus stage-specific caps. Budget exhaustion is persisted and printed
   as `stage time-budget reached`.
-- Live default testaspnet validation completed in 145.19 seconds. Default
-  templates completed 1,543 requests in 72.36 seconds (21.32 req/s).
+- The final live default testaspnet validation completed in 291.99 seconds,
+  including active crawl, archive, fuzz, parameter, and template requests.
+  Default templates completed 1,543 requests in 72.08 seconds (21.41 req/s).
+  Crawl, archive, and parameter discovery reached their clean stage budgets;
+  fuzz and templates completed normally.
 
 ## L2 consolidated pipeline hardening
 
@@ -34,6 +37,8 @@
 - JS analysis now fetches same-origin scripts only. The scanme validation had
   followed Google Analytics and reported its public SDK key as a secret; the
   off-origin fetch is now blocked and the targeted rerun is FP-free.
+- Full-depth HTTP raises its request budget before preflight so safe-path probes
+  cannot silently starve crawl, fuzz, parameter, or template stages.
 - The bounded five-name pipeline completed in 865.23 seconds with independent
   badssl SNI findings, 21 screenshots, 18 native template findings, HTML/PDF
   reports, and 106 POC files. CVE enrichment ran but produced no version-matched

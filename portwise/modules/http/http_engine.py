@@ -81,7 +81,16 @@ class HttpEngine:
         return "http" in text or "web" in text or service.port in {80, 443, 8000, 8080, 8443}
 
     def run(self, service: Service, config: dict | None = None) -> list[Finding]:
+        run_started = time.perf_counter()
         config = config or {}
+        if str(config.get("validation_level", "recon")) == "full":
+            web_request_budget = int(config.get("web_request_budget_per_host", 3000))
+            client_config = getattr(self.client, "config", None)
+            if client_config is not None:
+                client_config.max_requests_per_host = max(
+                    int(getattr(client_config, "max_requests_per_host", 0)),
+                    web_request_budget,
+                )
         https_ports = {443, 8443, 9443, 2053, 2083, 2087, 2096, 4443, 5443, 7443, 12443, 8834, 10443}
         tls = service.tunnel == "ssl" or "https" in service.service_name.lower() or service.port in https_ports
         findings: list[Finding] = []
@@ -110,7 +119,7 @@ class HttpEngine:
             service,
             tls,
             concurrency=int(config.get("web_safe_path_concurrency", 10)),
-            budget_seconds=float(config.get("web_safe_path_budget_seconds", 60)),
+            budget_seconds=float(config.get("web_safe_path_budget_seconds", 30)),
         )))
 
         body_text = get.read(self.max_body).decode("utf-8", errors="ignore")
@@ -227,7 +236,7 @@ class HttpEngine:
             "web_per_host_budget_seconds",
             600 if bool(config.get("web_template_engine", {}).get("selection", {}).get("deep", False)) else 300,
         ))
-        web_started = time.perf_counter()
+        web_started = run_started
 
         def request_count() -> int:
             counts = getattr(self.client, "_request_count", {})
@@ -237,10 +246,10 @@ class HttpEngine:
             remaining = max(0.001, host_budget - (time.perf_counter() - web_started))
             stage_cfg = config.get(f"web_{stage}", {})
             default_caps = {
-                "crawl": 60.0,
-                "archive": 30.0,
-                "fuzz": 60.0,
-                "param": 60.0,
+                "crawl": 30.0,
+                "archive": 20.0,
+                "fuzz": 30.0,
+                "param": 30.0,
                 "default_templates": 120.0,
                 "deep_templates": 300.0,
             }
