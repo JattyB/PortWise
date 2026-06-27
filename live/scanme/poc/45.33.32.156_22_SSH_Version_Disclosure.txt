@@ -1,9 +1,0 @@
-Finding : SSH Version Disclosure
-Severity: low
-Target  : 45.33.32.156:22
-
-Reproduction command (run this and screenshot the output):
-  nmap -sV -p22 45.33.32.156
-
------ PASTE OUTPUT / SCREENSHOT REFERENCE BELOW -----
-

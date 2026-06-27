@@ -1,9 +1,0 @@
-Finding : HTTP Framework Version Disclosure
-Severity: low
-Target  : 44.238.29.244:80
-
-Reproduction command (run this and screenshot the output):
-  nmap -sV -p80 44.238.29.244
-
------ PASTE OUTPUT / SCREENSHOT REFERENCE BELOW -----
-

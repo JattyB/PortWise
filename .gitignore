@@ -39,3 +39,5 @@ cache/
 
 config.yaml
 *.local.yaml
+
+live/

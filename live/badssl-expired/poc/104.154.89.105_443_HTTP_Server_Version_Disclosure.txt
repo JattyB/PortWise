@@ -1,9 +1,0 @@
-Finding : HTTP Server Version Disclosure
-Severity: low
-Target  : 104.154.89.105:443
-
-Reproduction command (run this and screenshot the output):
-  nmap -sV -p443 104.154.89.105
-
------ PASTE OUTPUT / SCREENSHOT REFERENCE BELOW -----
-

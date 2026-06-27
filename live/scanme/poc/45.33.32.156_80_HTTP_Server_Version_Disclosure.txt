@@ -1,9 +1,0 @@
-Finding : HTTP Server Version Disclosure
-Severity: low
-Target  : 45.33.32.156:80
-
-Reproduction command (run this and screenshot the output):
-  nmap -sV -p80 45.33.32.156
-
------ PASTE OUTPUT / SCREENSHOT REFERENCE BELOW -----
-
