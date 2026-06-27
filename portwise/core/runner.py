@@ -46,6 +46,9 @@ def run_scan(
 ) -> RunResult:
     run = RunResult(project=str(config.project.get("name", workspace.name)), profile=profile.name)
     state = RunState(project=run.project, profile=profile.name, targets_loaded=_load_targets(targets_file))
+    if "scope" in config.raw:
+        from portwise.core.scope import policy_from_config
+        policy_from_config(config.raw).require(state.targets_loaded)
     timeout = int(config.scanner.get("nmap_timeout_seconds", 1800))
     nmap = NmapRunner(workspace, timeout_seconds=timeout)
     use_native_connect_scan = _use_native_connect_scan(config, nmap)
@@ -282,6 +285,24 @@ def run_scan(
         progress=progress,
     )
 
+    from portwise.intelligence.correlation import correlate_findings
+    correlation_findings = correlate_findings(run.findings)
+    run.findings.extend(correlation_findings)
+    run.evidence.extend(evidence for finding in correlation_findings for evidence in finding.evidence)
+    suppression_cfg = config.raw.get("false_positive_suppression", {})
+    if isinstance(suppression_cfg, dict) and suppression_cfg.get("file"):
+        from portwise.reporting.customization import apply_report_inputs
+        suppressed = apply_report_inputs(
+            {"findings": [asdict(finding) for finding in run.findings]},
+            suppression_file=Path(str(suppression_cfg["file"])),
+        )["findings"]
+        statuses = {str(item.get("id")): item for item in suppressed}
+        for finding in run.findings:
+            row = statuses.get(finding.id, {})
+            if row.get("status") == "suppressed":
+                finding.status = "suppressed"
+                if "false-positive-suppressed" not in finding.tags:
+                    finding.tags.append("false-positive-suppressed")
     run.findings = dedupe_findings(run.findings)
     run.metadata["state"] = state.to_dict()
     run.metadata["module_target_counts"] = module_target_counts(routes)
@@ -634,6 +655,8 @@ def _module_config(config: PortWiseConfig, profile: Profile, *, internet_facing:
             "imports",
             "safety",
             "cache",
+            "scope",
+            "credential_reuse",
         )
         if isinstance(config.raw.get(key), dict)
     }
