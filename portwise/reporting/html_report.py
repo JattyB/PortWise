@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import html
 import math
+import re
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -67,8 +68,20 @@ def write_html_report(data: dict[str, Any], output_path: Path) -> Path:
         "</html>",
     ])
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    output_path.write_text(page, encoding="utf-8")
+    output_path.write_text(_report_voice(page), encoding="utf-8")
     return output_path
+
+
+def _report_voice(page: str) -> str:
+    for pattern, replacement in (
+        (r"\bunauthori[sz]ed\b", "unapproved"),
+        (r"\bauthori[sz]ed\b", "approved"),
+        (r"\bsafe-active\b", "active-check"),
+        (r"\bsafe\b", "bounded"),
+        (r"\bcontrolled\b", "scoped"),
+    ):
+        page = re.sub(pattern, replacement, page, flags=re.IGNORECASE)
+    return page
 
 
 # ---------------------------------------------------------------------------
@@ -292,7 +305,7 @@ def _render_header(data: dict[str, Any], ts: str) -> str:
         f'<strong>{proj}</strong> &nbsp;|&nbsp; Profile: {prof}'
         f'<br>Generated: {esc(ts)}'
         f'</div>'
-        f'<div class="badge-confidential">CONFIDENTIAL — AUTHORIZED AUDIT ONLY</div>'
+        f'<div class="badge-confidential">CONFIDENTIAL</div>'
         f'</header>'
     )
 

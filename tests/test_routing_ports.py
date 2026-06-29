@@ -50,6 +50,24 @@ def test_ajp_product_name_does_not_route_to_http():
     assert routes["http_targets"] == []
 
 
+def test_script_banners_do_not_cross_route_smtp_or_postgres_as_dns_tls():
+    services = [
+        Service(
+            host="192.0.2.10", port=25, protocol="tcp", state="open",
+            service_name="smtp", product="Postfix smtpd",
+            scripts={"banner": {"output": "metasploitable.localdomain ESMTP"}},
+        ),
+        Service(
+            host="192.0.2.10", port=5432, protocol="tcp", state="open",
+            service_name="postgresql", product="PostgreSQL DB", version="8.3",
+            scripts={"ssl-cert": {"output": "Subject: ubuntu.localdomain"}},
+        ),
+    ]
+    routes = route_assets([_asset("192.0.2.10", services)])
+    assert {target.port for target in routes["dns_targets"]} == set()
+    assert {target.port for target in routes["tls_targets"]} == set()
+
+
 def test_unauthenticated_docker_api_is_critical(monkeypatch):
     import portwise.modules.registry as reg
     # Make the safe HTTP fingerprint return a Docker /version-like 200 response

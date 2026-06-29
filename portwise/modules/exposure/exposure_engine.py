@@ -5,7 +5,7 @@ from portwise.core.models import Evidence, Finding, Service, Severity
 
 RISKY_SERVICES: dict[str, tuple[Severity, str]] = {
     "ftp": (Severity.MEDIUM, "FTP exposure may disclose data or permit weak authentication paths."),
-    "telnet": (Severity.HIGH, "Telnet transmits credentials and session data in clear text."),
+    "telnet": (Severity.INFO, "Telnet is reachable; protocol-specific checks determine cleartext risk."),
     "ssh": (Severity.LOW, "SSH exposure should be owner-approved and hardened."),
     "smb": (Severity.MEDIUM, "SMB exposure should be restricted to trusted networks."),
     "microsoft-ds": (Severity.MEDIUM, "SMB exposure should be restricted to trusted networks."),
@@ -53,7 +53,7 @@ def evaluate_exposure(service: Service, context: str = "unknown") -> list[Findin
     for key, (base_severity, detail) in RISKY_SERVICES.items():
         if key not in haystack:
             continue
-        severity = _raise_for_external(base_severity) if context == "external" else base_severity
+        severity = Severity.INFO
         suffix = " Needs Owner Validation" if context == "unknown" else ""
         evidence = Evidence(
             source="nmap-service-fingerprint",
@@ -69,7 +69,8 @@ def evaluate_exposure(service: Service, context: str = "unknown") -> list[Findin
             protocol=service.protocol,
             service=service.service_name,
             description=detail,
-            recommendation="Validate business requirement, restrict network access, and ensure hardened configuration.",
+            recommendation="Restrict the service to required network paths and apply the protocol-specific finding remediation.",
+            category="information",
             evidence_strength=2,
             type="exposure",
             evidence=[evidence],

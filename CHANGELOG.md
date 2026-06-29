@@ -1,5 +1,27 @@
 # Changelog
 
+## Metasploitable2 remediation — P1
+
+- Finding deduplication now groups semantic endpoint issues, merges evidence,
+  tags, references, exploit signals, and confidence, and retains the strongest
+  finding. The original 53-finding Metasploitable2 report collapses to 23
+  distinct endpoint issues.
+- Exposure, plaintext, service-module, and owner-validation variants no longer
+  produce separate rows for FTP, Telnet, SSH, SMB, or Tomcat.
+- SSH algorithm findings are consolidated into `Weak SSH Cryptography`; legacy
+  exposure/version rows are consolidated into `Legacy SSH Service`.
+- Missing HTTP header rows are consolidated into one finding per endpoint.
+- Script banners and STARTTLS certificate output no longer cross-route SMTP or
+  PostgreSQL into DNS/direct-TLS modules.
+- Generic exposure findings are informational. Protocol findings carry impact
+  severity.
+- Unknown findings no longer receive the repetitive generic four-step
+  remediation block. Specific remediation remains attached where available.
+- phpinfo uses a disclosure-specific description. POC commands and captured
+  output populate the pentest appendices when the bundle exists.
+- HTML/PDF templates remove authorization/safety positioning language from the
+  cover, footer, tags, and rendered text.
+
 ## Metasploitable2 remediation — P0
 
 - Binary services such as AJP, RMI, DRb, databases, SMB, and RPC no longer

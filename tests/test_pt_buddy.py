@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from unittest.mock import patch
 
-from portwise.core.models import Confidence, Finding, Service, Severity
+from portwise.core.models import Confidence, Evidence, Finding, Service, Severity
 from portwise.intelligence.aggregation import (
     aggregate_ports,
     filter_ports,
@@ -91,6 +91,43 @@ def test_dedupe_keeps_strongest():
     assert len(result) == 2
     smbv1 = [f for f in result if f.title == "SMBv1 Enabled"][0]
     assert smbv1.confidence == Confidence.CONFIRMED
+
+
+def test_dedupe_merges_exposure_paths_into_protocol_issue():
+    generic = Finding(
+        title="Exposed TELNET Service Needs Owner Validation",
+        severity=Severity.INFO,
+        asset="10.0.0.1",
+        port=23,
+        protocol="tcp",
+        service="telnet",
+        confidence=Confidence.POSSIBLE,
+        evidence=[Evidence("nmap", "telnet fingerprint", 2)],
+    )
+    module = Finding(
+        title="Exposed TELNET Service",
+        severity=Severity.INFO,
+        asset="10.0.0.1",
+        port=23,
+        protocol="tcp",
+        service="telnet",
+        confidence=Confidence.INFORMATIONAL,
+        evidence=[Evidence("exposure", "reachable", 2)],
+    )
+    cleartext = Finding(
+        title="Cleartext Protocol Exposed — Telnet",
+        severity=Severity.HIGH,
+        asset="10.0.0.1",
+        port=23,
+        protocol="tcp",
+        service="telnet",
+        confidence=Confidence.CONFIRMED,
+        evidence=[Evidence("plaintext", "cleartext protocol", 4)],
+    )
+    result = dedupe_findings([generic, module, cleartext])
+    assert len(result) == 1
+    assert result[0].title == "Cleartext Protocol Exposed — Telnet"
+    assert {item.source for item in result[0].evidence} == {"nmap", "exposure", "plaintext"}
 
 
 # --------------------------------------------------------------------------

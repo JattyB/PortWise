@@ -148,6 +148,8 @@ def test_html_report_severity_badges_colored(tmp_path: Path) -> None:
 def test_html_report_stat_cards_show_counts(tmp_path: Path) -> None:
     out = write_html_report(_sample_data(), tmp_path / "report.html")
     content = out.read_text(encoding="utf-8")
+    assert "AUTHORIZED" not in content.upper()
+    assert "SAFE-ACTIVE" not in content.upper()
     # 1 target, 1 live host, 1 vulnerability
     assert "stat-value" in content
     assert "Targets" in content

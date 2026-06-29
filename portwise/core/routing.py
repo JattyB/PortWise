@@ -151,9 +151,13 @@ def _target(service: Service, reason: str) -> ModuleTarget:
 
 
 def _fingerprint(service: Service) -> str:
-    script_texts = []
-    for v in service.scripts.values():
-        script_texts.append(v.get("output", "") if isinstance(v, dict) else str(v))
+    application_hints = []
+    for script_id in ("http-title", "http-server-header"):
+        value = service.scripts.get(script_id)
+        if isinstance(value, dict):
+            application_hints.append(str(value.get("output", "")))
+        elif value:
+            application_hints.append(str(value))
     return " ".join([
         service.service_name,
         service.product,
@@ -161,12 +165,12 @@ def _fingerprint(service: Service) -> str:
         service.extrainfo,
         service.tunnel or "",
         " ".join(service.cpes),
-        " ".join(script_texts),
+        " ".join(application_hints),
     ]).lower()
 
 
 def _is_tls(service: Service, text: str, tls_engine: TlsEngine | None) -> bool:
-    if service.tunnel == "ssl" or service.service_name.lower().startswith("ssl/") or "https" in text or " tls" in f" {text}":
+    if service.tunnel == "ssl" or service.service_name.lower().startswith("ssl/") or "https" in text:
         return True
     return bool(tls_engine and service.state == "open" and tls_engine.detect_tls(service.host, service.port, service.hostname))
 

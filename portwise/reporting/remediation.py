@@ -861,17 +861,7 @@ REMEDIATION: dict[str, dict] = {
     },
 }
 
-_GENERIC: dict = {
-    "summary": "Validate business need, restrict network access, and apply vendor hardening guidance.",
-    "steps": [
-        "Confirm the service is owner-approved and required.",
-        "Restrict access to authorised source IPs using firewall rules.",
-        "Apply vendor security hardening benchmarks and latest patches.",
-        "Monitor the service for anomalous activity.",
-    ],
-    "references": [],
-    "effort": "medium",
-}
+_GENERIC: dict = {}
 
 
 def get_remediation(title: str) -> dict:

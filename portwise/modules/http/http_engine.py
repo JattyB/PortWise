@@ -562,7 +562,12 @@ class HttpEngine:
                 port=service.port,
                 protocol=service.protocol,
                 service=service.service_name,
-                description="A common administrative or diagnostic path responded to a safe GET request.",
+                description=(
+                    "The exposed phpinfo page discloses PHP, module, filesystem, "
+                    "environment, and server configuration details."
+                    if title == "Exposed phpinfo Page"
+                    else "The requested administrative or diagnostic path returned a matching response."
+                ),
                 recommendation="Confirm business need and restrict access where appropriate.",
                 evidence_strength=5,
                 type="http-exposure",

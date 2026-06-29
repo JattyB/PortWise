@@ -290,6 +290,7 @@ def main(argv: list[str] | None = None) -> int:
                 client_name=args.client_name,
                 logo=args.logo,
             )
+            report["poc_bundle"] = _load_poc_bundle(args.run)
             previous = getattr(args, "previous", None)
             if previous:
                 from portwise.reporting.retest import compare_runs
@@ -685,6 +686,26 @@ def _cmd_poc(args) -> int:
         print("Run with --capture to execute the safe read-only commands and save their output.")
     print(f"Index: {index}")
     return 0
+
+
+def _load_poc_bundle(run_path: Path) -> dict[str, Any]:
+    poc_dir = run_path.resolve().parent.parent / "evidence" / "poc"
+    index = poc_dir / "INDEX.txt"
+    if not index.exists():
+        return {}
+    artifacts = []
+    for path in sorted(poc_dir.glob("*.txt")):
+        if path.name == "INDEX.txt":
+            continue
+        try:
+            content = path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        artifacts.append({"name": path.name, "content": content})
+    return {
+        "index": index.read_text(encoding="utf-8", errors="replace"),
+        "artifacts": artifacts,
+    }
 
 
 def _print_status(workspace: Path) -> None:
