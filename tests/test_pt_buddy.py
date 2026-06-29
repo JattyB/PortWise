@@ -222,6 +222,7 @@ def test_plaintext_module_flags_telnet():
     f = result.findings[0]
     assert "Telnet" in f.title
     assert f.confidence == Confidence.CONFIRMED
+    assert f.severity == Severity.MEDIUM
     assert "plaintext-protocol" in f.tags
 
 

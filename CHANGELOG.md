@@ -7,6 +7,8 @@
 - CVE findings now receive only ExploitDB records explicitly mapped to that
   CVE. Product/version title matching remains a fallback for records without a
   CVE, preventing cross-product exploit-reference noise.
+- Generic cleartext transport findings are capped at medium severity; exploit
+  and authentication weaknesses remain separate higher-impact findings.
 
 ## Metasploitable2 remediation — P3
 
