@@ -12,7 +12,8 @@ This roadmap drives PortWise to professional-grade PT capability. Phases are
 implemented in order, one commit per phase, tests green throughout.
 
 **Status: Phases 0-7, native rebuild A-K, and hardening Phases L-P complete.**
-415 tests passing at the final hardening gate.
+The Metasploitable2 remediation loop is in progress. P0 adds binary-protocol
+HTTP guards, hard per-service deadlines, and local CPE-based CVE matching.
 
 ## Hardening Phases L-P
 

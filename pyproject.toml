@@ -60,6 +60,8 @@ portwise = [
   "data/nuclei/templates/*.yml",
   "data/exploitdb/*.csv",
   "data/exploitdb/*.md",
+  "data/cve/*.json",
+  "data/cve/*.md",
   "data/secrets/*.toml",
   "data/secrets/*.md",
 ]

@@ -10,7 +10,7 @@ from portwise.intelligence.aggregation import (
     finding_overview,
     plaintext_summary,
 )
-from portwise.intelligence.cve_enrichment import NvdProvider, enrich_services_with_cves
+from portwise.intelligence.cve_enrichment import LocalCveProvider, enrich_services_with_cves
 from portwise.intelligence.false_positive import dedupe_findings
 from portwise.intelligence.version_match import cpe_product_matches
 from portwise.modules.registry import PlaintextProtocolModule
@@ -32,8 +32,7 @@ def test_keyword_only_cves_suppressed_by_default(tmp_path):
         {"id": "CVE-2", "match_status": "keyword_only", "cvss": 5.0, "references": []},
     ]
     svc = Service("203.0.113.5", 8080, "tcp", "open", "http", product="tomcat", version="9")
-    with patch.object(NvdProvider, "enrich", lambda self, s: _enrichment(cves)), \
-         patch.object(NvdProvider, "__init__", lambda self, *a, **k: None):
+    with patch.object(LocalCveProvider, "enrich", lambda self, s: _enrichment(cves)):
         findings, notes = enrich_services_with_cves([svc], tmp_path)
     assert findings == []
     assert any("Suppressed" in n for n in notes)
@@ -42,8 +41,7 @@ def test_keyword_only_cves_suppressed_by_default(tmp_path):
 def test_keyword_only_included_when_requested(tmp_path):
     cves = [{"id": "CVE-9", "match_status": "keyword_only", "cvss": 7.0, "references": []}]
     svc = Service("203.0.113.5", 8080, "tcp", "open", "http", product="tomcat", version="9")
-    with patch.object(NvdProvider, "enrich", lambda self, s: _enrichment(cves)), \
-         patch.object(NvdProvider, "__init__", lambda self, *a, **k: None):
+    with patch.object(LocalCveProvider, "enrich", lambda self, s: _enrichment(cves)):
         findings, _ = enrich_services_with_cves([svc], tmp_path, include_keyword_only=True)
     assert len(findings) == 1
 
@@ -54,8 +52,7 @@ def test_version_unknown_collapses_to_single_finding(tmp_path):
         for i in range(8)
     ]
     svc = Service("203.0.113.5", 80, "tcp", "open", "http", product="nginx", version="weird")
-    with patch.object(NvdProvider, "enrich", lambda self, s: _enrichment(cves)), \
-         patch.object(NvdProvider, "__init__", lambda self, *a, **k: None):
+    with patch.object(LocalCveProvider, "enrich", lambda self, s: _enrichment(cves)):
         findings, _ = enrich_services_with_cves([svc], tmp_path)
     assert len(findings) == 1
     assert "Manual Version Validation" in findings[0].title

@@ -1,0 +1,61 @@
+{
+  "format": "PortWise local NVD subset",
+  "schema": "NVD CVE JSON 2.0 compatible fields",
+  "updated": "2026-06-30",
+  "vulnerabilities": [
+    {
+      "cve": {
+        "id": "CVE-2011-2523",
+        "descriptions": [{"lang": "en", "value": "vsftpd 2.3.4 backdoored distribution opens a command shell."}],
+        "metrics": {"cvssMetricV31": [{"cvssData": {"baseScore": 9.8, "vectorString": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H"}}]},
+        "references": [{"url": "https://nvd.nist.gov/vuln/detail/CVE-2011-2523"}],
+        "configurations": [{"nodes": [{"cpeMatch": [{"vulnerable": true, "criteria": "cpe:2.3:a:vsftpd_project:vsftpd:2.3.4:*:*:*:*:*:*:*"}]}]}]
+      }
+    },
+    {
+      "cve": {
+        "id": "CVE-2007-2447",
+        "descriptions": [{"lang": "en", "value": "Samba username map script command execution."}],
+        "metrics": {"cvssMetricV31": [{"cvssData": {"baseScore": 9.8, "vectorString": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H"}}]},
+        "references": [{"url": "https://nvd.nist.gov/vuln/detail/CVE-2007-2447"}],
+        "configurations": [{"nodes": [{"cpeMatch": [{"vulnerable": true, "criteria": "cpe:2.3:a:samba:samba:*:*:*:*:*:*:*:*", "versionStartIncluding": "3.0.0", "versionEndExcluding": "3.0.25"}]}]}]
+      }
+    },
+    {
+      "cve": {
+        "id": "CVE-2011-3192",
+        "descriptions": [{"lang": "en", "value": "Apache HTTP Server overlapping byte-range denial of service."}],
+        "metrics": {"cvssMetricV31": [{"cvssData": {"baseScore": 7.5, "vectorString": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:H"}}]},
+        "references": [{"url": "https://nvd.nist.gov/vuln/detail/CVE-2011-3192"}],
+        "configurations": [{"nodes": [{"cpeMatch": [{"vulnerable": true, "criteria": "cpe:2.3:a:apache:http_server:*:*:*:*:*:*:*:*", "versionStartIncluding": "2.2.0", "versionEndExcluding": "2.2.20"}]}]}]
+      }
+    },
+    {
+      "cve": {
+        "id": "CVE-2008-5161",
+        "descriptions": [{"lang": "en", "value": "OpenSSH CBC-mode plaintext recovery weakness."}],
+        "metrics": {"cvssMetricV31": [{"cvssData": {"baseScore": 5.9, "vectorString": "CVSS:3.1/AV:N/AC:H/PR:N/UI:N/S:U/C:H/I:N/A:N"}}]},
+        "references": [{"url": "https://nvd.nist.gov/vuln/detail/CVE-2008-5161"}],
+        "configurations": [{"nodes": [{"cpeMatch": [{"vulnerable": true, "criteria": "cpe:2.3:a:openbsd:openssh:4.7p1:*:*:*:*:*:*:*"}]}]}]
+      }
+    },
+    {
+      "cve": {
+        "id": "CVE-2009-2446",
+        "descriptions": [{"lang": "en", "value": "MySQL database-name format string vulnerabilities."}],
+        "metrics": {"cvssMetricV31": [{"cvssData": {"baseScore": 6.5, "vectorString": "CVSS:3.1/AV:N/AC:L/PR:L/UI:N/S:U/C:N/I:L/A:H"}}]},
+        "references": [{"url": "https://nvd.nist.gov/vuln/detail/CVE-2009-2446"}],
+        "configurations": [{"nodes": [{"cpeMatch": [{"vulnerable": true, "criteria": "cpe:2.3:a:oracle:mysql:*:*:*:*:*:*:*:*", "versionStartIncluding": "4.0.0", "versionEndIncluding": "5.0.83"}]}]}]
+      }
+    },
+    {
+      "cve": {
+        "id": "CVE-2007-5898",
+        "descriptions": [{"lang": "en", "value": "PHP multibyte sequence handling vulnerability."}],
+        "metrics": {"cvssMetricV31": [{"cvssData": {"baseScore": 7.5, "vectorString": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:N/A:N"}}]},
+        "references": [{"url": "https://nvd.nist.gov/vuln/detail/CVE-2007-5898"}],
+        "configurations": [{"nodes": [{"cpeMatch": [{"vulnerable": true, "criteria": "cpe:2.3:a:php:php:*:*:*:*:*:*:*:*", "versionEndIncluding": "5.2.4"}]}]}]
+      }
+    }
+  ]
+}

@@ -70,6 +70,10 @@ scanner:
   # Aggregate native web-stage budget per host. Non-deep default runs stop
   # cleanly at this boundary and persist the completed/capped stage table.
   web_per_host_budget_seconds: 300
+  # Hard wall-clock deadline for one routed HTTP service. This includes all
+  # native web stages and guarantees a binary/misidentified service cannot
+  # block the host worker indefinitely.
+  http_service_timeout_seconds: 330
   web_request_budget_per_host: 3000
   web_safe_path_concurrency: 10
   web_safe_path_budget_seconds: 30

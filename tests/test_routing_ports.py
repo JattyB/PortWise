@@ -36,6 +36,20 @@ def test_db_and_docker_ports_route():
     assert 2375 in {t.port for t in routes["kubernetes_targets"]}
 
 
+def test_ajp_product_name_does_not_route_to_http():
+    service = Service(
+        host="192.0.2.10",
+        port=8009,
+        protocol="tcp",
+        state="open",
+        service_name="ajp13",
+        product="Apache Jserv",
+        version="1.3",
+    )
+    routes = route_assets([_asset(service.host, [service])])
+    assert routes["http_targets"] == []
+
+
 def test_unauthenticated_docker_api_is_critical(monkeypatch):
     import portwise.modules.registry as reg
     # Make the safe HTTP fingerprint return a Docker /version-like 200 response

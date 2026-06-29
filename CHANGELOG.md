@@ -1,5 +1,23 @@
 # Changelog
 
+## Metasploitable2 remediation — P0
+
+- Binary services such as AJP, RMI, DRb, databases, SMB, and RPC no longer
+  enter the HTTP engine because their product string contains an HTTP vendor
+  token.
+- Every routed HTTP service has a hard wall-clock deadline. A blocked native
+  transport call emits `HTTP Check Not Completed` and the host pipeline
+  continues.
+- Runtime CVE matching is local and deterministic. A packaged NVD-2.0-shaped
+  corpus uses strict CPE 2.3 vendor/product identity plus inclusive/exclusive
+  version ranges; scans no longer depend on live NVD responses.
+- Nmap CPE 2.2 URIs and known product/version fingerprints are normalized into
+  CPE 2.3 candidates. Web technology components with versions enter the same
+  local matcher.
+- Version-matched CVEs are cross-referenced against the packaged ExploitDB CSV
+  even when distribution backport sensitivity keeps finding confidence at
+  manual validation.
+
 ## L1 diagnostic telemetry
 
 - Added an isolated native web-stage profiler with a hard per-stage cap.

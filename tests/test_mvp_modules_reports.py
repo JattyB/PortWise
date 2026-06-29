@@ -5,7 +5,7 @@ from portwise.cli import main
 from portwise.core.models import Asset, Service, Severity
 from portwise.core.module_runner import execute_safe_modules
 from portwise.core.routing import route_assets
-from portwise.intelligence.cve_enrichment import EpssProvider, KevProvider, NvdProvider, enrich_services_with_cves
+from portwise.intelligence.cve_enrichment import LocalCveProvider, NvdProvider, enrich_services_with_cves
 from portwise.intelligence.false_positive import apply_false_positive_rules
 from portwise.intelligence.risk_scoring import assign_priority
 from portwise.modules.registry import ExposureModule, SshSafeModule
@@ -62,9 +62,7 @@ def test_cve_provider_parsing_with_mocked_json(tmp_path: Path, monkeypatch) -> N
 
 
 def test_cve_enrichment_findings_with_mocked_providers(tmp_path: Path, monkeypatch) -> None:
-    monkeypatch.setattr(NvdProvider, "enrich", lambda self, service: type("E", (), {"cves": [{"id": "CVE-2099-0002", "cvss": 7.5, "matched_cpe": "cpe:/a:test:test:1", "match_status": "version_matched", "references": []}], "provider_notes": []})())
-    monkeypatch.setattr(KevProvider, "enrich", lambda self, service: type("E", (), {"cves": [], "provider_notes": []})())
-    monkeypatch.setattr(EpssProvider, "enrich_cves", lambda self, cves: type("E", (), {"cves": [], "provider_notes": []})())
+    monkeypatch.setattr(LocalCveProvider, "enrich", lambda self, service: type("E", (), {"cves": [{"id": "CVE-2099-0002", "cvss": 7.5, "matched_cpe": "cpe:/a:test:test:1", "match_status": "version_matched", "references": []}], "provider_notes": []})())
     service = Service(host="203.0.113.10", port=80, protocol="tcp", state="open", service_name="http", product="test", version="1", cpes=["cpe:/a:test:test:1"])
     findings, notes = enrich_services_with_cves([service], tmp_path)
     assert notes == [] or isinstance(notes, list)

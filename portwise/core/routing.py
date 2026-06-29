@@ -30,6 +30,10 @@ ROUTE_KEYS = (
 
 
 HTTP_HINTS = ("http", "http-proxy", "web", "apache", "nginx", "iis", "tomcat", "jetty", "gunicorn", "werkzeug", "node", "express")
+NON_HTTP_PROTOCOLS = {
+    "ajp13", "ajp", "java-rmi", "rmi", "drb", "distccd", "irc", "mysql",
+    "postgresql", "netbios-ssn", "microsoft-ds", "rpcbind", "vnc", "x11",
+}
 DB_HINTS = ("mysql", "mariadb", "postgres", "postgresql", "mssql", "oracle", "mongodb", "redis", "elasticsearch", "cassandra", "couchdb", "memcached", "influxdb", "neo4j", "solr", "zookeeper", "etcd")
 DEVOPS_HINTS = ("jenkins", "gitlab", "gitea", "nexus", "artifactory", "sonarqube", "grafana", "kibana", "prometheus", "alertmanager", "rabbitmq", "portainer", "docker registry", "harbor", "webmin", "cockpit", "phpmyadmin", "adminer", "tomcat manager", "jboss", "wildfly", "weblogic", "airflow", "jupyter", "minio", "consul", "vault")
 K8S_HINTS = ("kubernetes", "kubelet", "docker api", "etcd", "docker registry", "prometheus", "cadvisor", "traefik", "envoy", "portainer", "minio")
@@ -106,7 +110,11 @@ def _route_service(service: Service, tls_engine: TlsEngine | None) -> list[tuple
     tcp = service.protocol == "tcp"
 
     web_port = tcp and (port in HTTP_PORTS or port in HTTPS_PORTS)
-    _add_if(routes, "http_targets", any(hint in text for hint in HTTP_HINTS) or web_port, "HTTP/web fingerprint or common web port matched.")
+    http_candidate = any(hint in text for hint in HTTP_HINTS) or web_port
+    protocol_name = service.service_name.strip().lower()
+    if protocol_name in NON_HTTP_PROTOCOLS and not web_port:
+        http_candidate = False
+    _add_if(routes, "http_targets", http_candidate, "HTTP/web fingerprint or common web port matched.")
     _add_if(routes, "tls_targets", _is_tls(service, text, tls_engine) or (tcp and port in HTTPS_PORTS), "TLS tunnel/fingerprint/handshake or HTTPS port matched.")
     _add_if(routes, "smb_targets", any(hint in text for hint in ("microsoft-ds", "netbios-ssn", "smb", "samba")) or service.port in {139, 445}, "SMB fingerprint or fallback port matched.")
     _add_if(routes, "ldap_targets", any(hint in text for hint in ("ldap", "active directory", "domain controller")) or (tcp and service.port in {389, 636, 3268, 3269}), "LDAP/AD fingerprint or fallback port matched.")

@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import time
 import urllib.parse
 from dataclasses import dataclass, field
@@ -12,7 +13,7 @@ from typing import Any, Protocol
 from portwise.core.models import Confidence, Evidence, Finding, Service, Severity
 from portwise.intelligence.constants import BACKPORT_SENSITIVE
 from portwise.intelligence.risk_scoring import assign_priority
-from portwise.intelligence.version_match import cpe_product_matches, version_in_range
+from portwise.intelligence.version_match import cpe_product_matches, parse_cpe_version, version_in_range
 from portwise.utils.http_client import PoliteHttpClient, PolitenessConfig
 
 
@@ -121,6 +122,67 @@ class NvdProvider(CachedHttpProvider):
         return CveEnrichment(cves=cves)
 
 
+class LocalCveProvider:
+    """Deterministic offline CVE matcher over packaged NVD-2.0-shaped data."""
+
+    name = "local-cve"
+
+    def __init__(self, dataset_path: Path | None = None) -> None:
+        self.dataset_path = dataset_path or (
+            Path(__file__).resolve().parents[1] / "data" / "cve" / "local_cves.json"
+        )
+        self._data: dict[str, Any] | None = None
+
+    def enrich(self, service: Service) -> CveEnrichment:
+        data = self._load()
+        detected_cpes = service_cpe23_candidates(service)
+        if not detected_cpes:
+            return CveEnrichment(provider_notes=[
+                f"Local CVE: no strict CPE mapping for {service.product or service.service_name} {service.version}."
+            ])
+
+        cves: list[dict[str, Any]] = []
+        detected_version = _clean_detected_version(service.version) or next(
+            (value for value in (parse_cpe_version(cpe) for cpe in detected_cpes) if value),
+            service.version,
+        )
+        for item in data.get("vulnerabilities", []):
+            status, matched = _extract_match_status(
+                item,
+                service.product,
+                detected_cpes,
+                detected_version,
+                is_keyword=False,
+            )
+            if status != "version_matched":
+                continue
+            cve_obj = item.get("cve", {})
+            metrics = cve_obj.get("metrics", {})
+            refs = [
+                ref.get("url")
+                for ref in cve_obj.get("references", [])
+                if isinstance(ref, dict) and ref.get("url")
+            ][:5]
+            cves.append({
+                "id": cve_obj.get("id"),
+                "cvss": _cvss(metrics),
+                "cvss_vector": _cvss_vector(metrics),
+                "severity": _severity_from_cvss(_cvss(metrics)),
+                "references": refs,
+                "matched_cpe": matched,
+                "match_status": status,
+                "affected_product": service.product,
+                "detected_version": detected_version,
+                "detected_cpes": detected_cpes,
+            })
+        return CveEnrichment(cves=cves)
+
+    def _load(self) -> dict[str, Any]:
+        if self._data is None:
+            self._data = json.loads(self.dataset_path.read_text(encoding="utf-8"))
+        return self._data
+
+
 class KevProvider(CachedHttpProvider):
     name = "kev"
     url = "https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json"
@@ -191,27 +253,15 @@ def enrich_services_with_cves(
     if not enabled:
         return [], ["CVE enrichment disabled."]
 
-    nvd = NvdProvider(cache_dir)
-    kev = KevProvider(cache_dir)
-    epss = EpssProvider(cache_dir)
-
-    # Fetch KEV catalog once; build an ID set for fast lookup
-    kev_data = kev.enrich(services[0] if services else Service("", 0, "", "")).cves if services else []
-    kev_ids: set[str] = {item["id"] for item in kev_data if item.get("id")}
+    local = LocalCveProvider()
 
     findings: list[Finding] = []
     notes: list[str] = []
     suppressed_keyword = 0
 
     for service in services:
-        enrichment = nvd.enrich(service)
+        enrichment = local.enrich(service)
         notes.extend(enrichment.provider_notes)
-
-        cve_ids = [str(c["id"]) for c in enrichment.cves if c.get("id")]
-        epss_map = {
-            item["id"]: item
-            for item in epss.enrich_cves(cve_ids).cves
-        }
 
         unknown_bucket: list[dict[str, Any]] = []
 
@@ -220,10 +270,7 @@ def enrich_services_with_cves(
             match_status = cve.get("match_status", "keyword_only")
 
             # KEV annotation: only applied when the CVE legitimately matched this service
-            cve["kev"] = (cve_id in kev_ids) and (match_status == "version_matched")
-
-            if cve_id in epss_map:
-                cve["epss"] = epss_map[cve_id].get("epss")
+            cve["kev"] = False
 
             if match_status == "keyword_only" and not include_keyword_only:
                 suppressed_keyword += 1
@@ -245,6 +292,55 @@ def enrich_services_with_cves(
         )
 
     return findings, notes
+
+
+_CPE_PRODUCT_MAP: tuple[tuple[tuple[str, ...], str, str], ...] = (
+    (("vsftpd",), "vsftpd_project", "vsftpd"),
+    (("apache httpd", "apache http server", "httpd"), "apache", "http_server"),
+    (("samba", "smbd"), "samba", "samba"),
+    (("openssh",), "openbsd", "openssh"),
+    (("mysql",), "oracle", "mysql"),
+    (("php",), "php", "php"),
+)
+
+
+def service_cpe23_candidates(service: Service) -> list[str]:
+    """Return strict CPE 2.3 candidates from nmap CPEs or curated identities."""
+    candidates: list[str] = []
+    for raw in service.cpes:
+        converted = _to_cpe23(raw)
+        if converted and converted not in candidates:
+            candidates.append(converted)
+    text = f"{service.product} {service.service_name}".strip().lower()
+    version = _clean_detected_version(service.version)
+    if version:
+        for aliases, vendor, product in _CPE_PRODUCT_MAP:
+            if any(alias in text for alias in aliases):
+                candidate = f"cpe:2.3:a:{vendor}:{product}:{version}:*:*:*:*:*:*:*"
+                if candidate not in candidates:
+                    candidates.append(candidate)
+                break
+    return candidates
+
+
+def _to_cpe23(raw: str) -> str | None:
+    if raw.startswith("cpe:2.3:"):
+        return raw
+    if not raw.startswith("cpe:/"):
+        return None
+    parts = raw[5:].split(":")
+    if len(parts) < 3:
+        return None
+    part, vendor, product = parts[:3]
+    version = parts[3] if len(parts) > 3 and parts[3] else "*"
+    return f"cpe:2.3:{part}:{vendor}:{product}:{version}:*:*:*:*:*:*:*"
+
+
+def _clean_detected_version(raw: str) -> str:
+    value = (raw or "").strip().split()[0] if (raw or "").strip() else ""
+    value = re.sub(r"^[^0-9]*", "", value)
+    value = re.sub(r"[-_]\d*(?:debian|ubuntu).*$", "", value, flags=re.IGNORECASE)
+    return value
 
 
 def _collapsed_version_unknown_finding(service: Service, cves: list[dict[str, Any]]) -> Finding:
@@ -416,13 +512,21 @@ def _extract_match_status(
     first_criteria: str | None = None
 
     for entry in matching:
-        result = version_in_range(
-            version,
-            entry.get("versionStartIncluding"),
-            entry.get("versionStartExcluding"),
-            entry.get("versionEndIncluding"),
-            entry.get("versionEndExcluding"),
-        )
+        criteria_version = _criteria_version(entry.get("criteria", ""))
+        has_range = any(entry.get(key) for key in (
+            "versionStartIncluding", "versionStartExcluding",
+            "versionEndIncluding", "versionEndExcluding",
+        ))
+        if criteria_version and not has_range:
+            result = version_in_range(version, criteria_version, None, criteria_version, None)
+        else:
+            result = version_in_range(
+                version,
+                entry.get("versionStartIncluding"),
+                entry.get("versionStartExcluding"),
+                entry.get("versionEndIncluding"),
+                entry.get("versionEndExcluding"),
+            )
         if result is True:
             any_in_range = True
             first_criteria = entry.get("criteria")
@@ -435,6 +539,13 @@ def _extract_match_status(
     if any_unknown:
         return "version_unknown", None
     return "drop", None
+
+
+def _criteria_version(criteria: str) -> str | None:
+    parts = criteria.split(":")
+    if len(parts) < 6 or parts[5] in {"", "*", "-"}:
+        return None
+    return parts[5]
 
 
 def _service_query(service: Service) -> tuple[str, bool]:

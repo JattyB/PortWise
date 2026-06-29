@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import ftplib
 import socket
+import queue
+import threading
 import struct
 from typing import TYPE_CHECKING, Any
 
@@ -250,11 +252,78 @@ class HttpModule(PortWiseModule):
             paths=tuple(config.get("http_paths", []) or ()),
             client=http_client,
         )
-        findings = engine.run(service, config=config)
+        service_budget = float(config.get("http_service_timeout_seconds", 330))
+        findings, timed_out = _run_http_engine_with_deadline(
+            engine, service, config, service_budget,
+        )
         for finding in findings:
             finding.module = self.name
+        if timed_out:
+            return ModuleResult(
+                self.name,
+                target,
+                findings=findings,
+                evidence=[e for f in findings for e in f.evidence],
+                errors=[f"HTTP service deadline reached after {service_budget:g}s; continued pipeline."],
+            )
         findings.extend(_run_web_auth_checks(target, config, http_client, hostname))
         return ModuleResult(self.name, target, findings=findings, evidence=[e for f in findings for e in f.evidence])
+
+
+def _run_http_engine_with_deadline(
+    engine: HttpEngine,
+    service: Service,
+    config: dict[str, Any],
+    timeout: float,
+) -> tuple[list[Finding], bool]:
+    """Run one HTTP service behind a non-blocking wall-clock deadline.
+
+    A daemon is deliberate: Python cannot cancel a native curl call running in
+    another thread. On deadline the host worker continues and process shutdown
+    is not held by the abandoned transport call.
+    """
+    results: "queue.Queue[tuple[bool, Any]]" = queue.Queue(maxsize=1)
+
+    def target() -> None:
+        try:
+            results.put((True, engine.run(service, config=config)))
+        except BaseException as exc:  # propagate through the module result
+            results.put((False, exc))
+
+    worker = threading.Thread(
+        target=target,
+        name=f"portwise-http-{service.host}-{service.port}",
+        daemon=True,
+    )
+    worker.start()
+    worker.join(max(0.001, timeout))
+    if worker.is_alive():
+        evidence = Evidence(
+            "http-service-timeout",
+            f"HTTP service deadline reached after {timeout:g}s; pipeline continued.",
+            1,
+            {"host": service.host, "port": service.port, "timeout_seconds": timeout},
+        )
+        return [Finding(
+            title="HTTP Check Not Completed",
+            severity=Severity.INFO,
+            asset=service.host,
+            port=service.port,
+            protocol=service.protocol,
+            service=service.service_name,
+            description=f"HTTP checks exceeded the {timeout:g}s per-service deadline.",
+            recommendation="Verify the detected application protocol and retry the HTTP checks.",
+            confidence=Confidence.POSSIBLE,
+            evidence_strength=1,
+            type="skipped-check",
+            module="http",
+            evidence=[evidence],
+            tags=["check-failed", "service-timeout"],
+        )], True
+    ok, value = results.get_nowait()
+    if not ok:
+        raise value
+    return list(value), False
 
 
 class ExposureModule(PortWiseModule):

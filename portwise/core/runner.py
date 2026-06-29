@@ -230,11 +230,11 @@ def run_scan(
             progress.finish_phase("Module execution", message=f"{len(module_results)} module target runs, {len(module_findings)} findings")
     if not no_cve and not dry_run and bool(profile.modules.get("cve_enrichment", False)):
         if progress:
-            services = _services_from_assets(run.assets)
+            services = _cve_services(run.assets, run.findings)
             progress.start_phase("CVE enrichment", f"enriching {len(services)} services/products/CPEs")
         cve_cfg = config.raw.get("cve", {}) if isinstance(config.raw.get("cve"), dict) else {}
         cve_findings, cve_notes = enrich_services_with_cves(
-            _services_from_assets(run.assets),
+            _cve_services(run.assets, run.findings),
             workspace / "cache" / "cve",
             enabled=True,
             include_keyword_only=bool(cve_cfg.get("include_keyword_only", False)),
@@ -245,7 +245,7 @@ def run_scan(
         state.module_errors.extend(cve_notes)
         if progress:
             progress.update_counters(findings_found=len(run.findings))
-            progress.finish_phase("CVE enrichment", message=f"{len(cve_findings)} CVE findings; providers: NVD/KEV/EPSS")
+            progress.finish_phase("CVE enrichment", message=f"{len(cve_findings)} CVE findings; provider: packaged local CPE corpus")
     elif no_cve:
         state.skipped_phases.append("cve: Disabled by --no-cve.")
         if progress:
@@ -417,7 +417,7 @@ def _run_exploit_intel_phase(
 ) -> None:
     """Annotate version-matched CVE findings with public exploit availability."""
     intel_cfg = config.raw.get("exploit_intel", {}) if isinstance(config.raw.get("exploit_intel"), dict) else {}
-    cve_findings = [f for f in run.findings if f.cve_id and str(f.confidence) in {"Likely", "Confirmed"}]
+    cve_findings = [f for f in run.findings if f.cve_id]
 
     if dry_run or not cve_findings or not bool(intel_cfg.get("enabled", True)):
         reason = "Dry-run mode" if dry_run else "No version-matched CVE findings" if not cve_findings else "Disabled by config"
@@ -614,13 +614,47 @@ def analyze_assets(
     run.evidence.extend([evidence for finding in module_findings for evidence in finding.evidence])
     run.metadata.update(module_summary(module_results))
     if not no_cve:
-        cve_findings, cve_notes = enrich_services_with_cves(_services_from_assets(assets), Path(".portwise_cache") / "cve", enabled=True)
+        cve_findings, cve_notes = enrich_services_with_cves(_cve_services(assets, run.findings), Path(".portwise_cache") / "cve", enabled=True)
         run.findings.extend(cve_findings)
         run.evidence.extend([evidence for finding in cve_findings for evidence in finding.evidence])
         run.metadata["cve_notes"] = cve_notes
     run.findings = dedupe_findings(run.findings)
     run.finish()
     return run
+
+
+def _cve_services(assets: list[Asset], findings: list[Finding]) -> list[Service]:
+    services = _services_from_assets(assets)
+    seen = {(s.host, s.port, s.product.lower(), s.version.lower()) for s in services}
+    for finding in findings:
+        for evidence in finding.evidence:
+            data = evidence.data if isinstance(evidence.data, dict) else {}
+            technologies = data.get("technologies")
+            if not isinstance(technologies, list):
+                continue
+            for technology in technologies:
+                if isinstance(technology, dict):
+                    product = str(technology.get("name", "")).strip()
+                    version = str(technology.get("version", "") or "").strip()
+                else:
+                    product = str(getattr(technology, "name", "")).strip()
+                    version = str(getattr(technology, "version", "") or "").strip()
+                if not product or not version:
+                    continue
+                key = (finding.asset, int(finding.port or 0), product.lower(), version.lower())
+                if key in seen:
+                    continue
+                seen.add(key)
+                services.append(Service(
+                    host=finding.asset,
+                    port=int(finding.port or 0),
+                    protocol=finding.protocol or "tcp",
+                    state="open",
+                    service_name=finding.service or "http",
+                    product=product,
+                    version=version,
+                ))
+    return services
 
 
 def build_run_state_from_assets(assets: list[Asset], project: str, profile: str, targets: list[str] | None = None) -> RunState:

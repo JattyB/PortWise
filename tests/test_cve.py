@@ -9,9 +9,11 @@ from portwise.core.models import Confidence, Service
 from portwise.intelligence.cve_enrichment import (
     EpssProvider,
     KevProvider,
+    LocalCveProvider,
     NvdProvider,
     _extract_match_status,
     enrich_services_with_cves,
+    service_cpe23_candidates,
 )
 
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -216,9 +218,9 @@ def test_offline_no_internet_degrades_gracefully(tmp_path):
         return_value=(None, "Connection refused"),
     ):
         findings, notes = enrich_services_with_cves(services, tmp_path, enabled=True)
-    # Should complete without raising; findings may be empty
+    # Runtime enrichment is local and does not call either network provider.
     assert isinstance(findings, list)
-    assert any("NVD skipped" in n for n in notes)
+    assert not any("NVD skipped" in n for n in notes)
 
 
 def test_no_api_key_still_works(tmp_path):
@@ -229,3 +231,83 @@ def test_no_api_key_still_works(tmp_path):
     with patch.object(nvd, "fetch_json", return_value=(fixture, None)):
         enrichment = nvd.enrich(_nginx_service("1.22.0"))
     assert isinstance(enrichment.cves, list)
+
+
+def test_local_cpe_corpus_matches_metasploitable_versions_without_network(tmp_path):
+    services = [
+        Service("192.0.2.1", 21, "tcp", "open", "ftp", product="vsftpd", version="2.3.4"),
+        Service("192.0.2.1", 80, "tcp", "open", "http", product="Apache httpd", version="2.2.8"),
+        Service("192.0.2.1", 445, "tcp", "open", "netbios-ssn", product="Samba smbd", version="3.0.20-Debian"),
+        Service("192.0.2.1", 22, "tcp", "open", "ssh", product="OpenSSH", version="4.7p1 Debian 8ubuntu1"),
+        Service("192.0.2.1", 3306, "tcp", "open", "mysql", product="MySQL", version="5.0.51a-3ubuntu5"),
+        Service("192.0.2.1", 80, "tcp", "open", "http", product="PHP", version="5.2.4"),
+    ]
+    findings, notes = enrich_services_with_cves(services, tmp_path)
+    pairs = {(int(f.port or 0), str(f.cve_id)) for f in findings}
+    assert (21, "CVE-2011-2523") in pairs
+    assert (80, "CVE-2011-3192") in pairs
+    assert (80, "CVE-2007-5898") in pairs
+    assert (445, "CVE-2007-2447") in pairs
+    assert (22, "CVE-2008-5161") in pairs
+    assert (3306, "CVE-2009-2446") in pairs
+    assert not any("NVD skipped" in note for note in notes)
+
+
+def test_local_cpe_exact_version_does_not_cross_match():
+    provider = LocalCveProvider()
+    service = Service("192.0.2.1", 21, "tcp", "open", "ftp", product="vsftpd", version="2.3.5")
+    assert provider.enrich(service).cves == []
+
+
+def test_old_style_cpe_is_converted_to_cpe23():
+    service = Service(
+        "192.0.2.1", 80, "tcp", "open", "http",
+        product="Apache httpd", version="2.2.8",
+        cpes=["cpe:/a:apache:http_server:2.2.8"],
+    )
+    assert "cpe:2.3:a:apache:http_server:2.2.8:*:*:*:*:*:*:*" in service_cpe23_candidates(service)
+
+
+def test_web_technology_versions_enter_local_cve_matching():
+    from portwise.core.models import Evidence, Finding, Severity
+    from portwise.core.runner import _cve_services
+
+    finding = Finding(
+        title="HTTP Technology Fingerprint",
+        severity=Severity.INFO,
+        asset="192.0.2.1",
+        port=80,
+        protocol="tcp",
+        service="http",
+        evidence=[Evidence(
+            "http-technology-fingerprint",
+            "matched",
+            4,
+            {"technologies": [{"name": "PHP", "version": "5.2.4"}]},
+        )],
+    )
+    services = _cve_services([], [finding])
+    assert [(service.product, service.version) for service in services] == [("PHP", "5.2.4")]
+    assert LocalCveProvider().enrich(services[0]).cves[0]["id"] == "CVE-2007-5898"
+
+
+def test_runtime_technology_dataclass_enters_local_cve_matching():
+    from portwise.core.models import Evidence, Finding, Severity
+    from portwise.core.runner import _cve_services
+    from portwise.modules.http.tech_fingerprint import TechnologyMatch
+
+    finding = Finding(
+        title="HTTP Technology Fingerprint",
+        severity=Severity.INFO,
+        asset="192.0.2.1",
+        port=80,
+        evidence=[Evidence(
+            "http-technology-fingerprint",
+            "matched",
+            4,
+            {"technologies": [TechnologyMatch("PHP", 100, "5.2.4")]},
+        )],
+    )
+    services = _cve_services([], [finding])
+    assert services[0].product == "PHP"
+    assert LocalCveProvider().enrich(services[0]).cves[0]["id"] == "CVE-2007-5898"
