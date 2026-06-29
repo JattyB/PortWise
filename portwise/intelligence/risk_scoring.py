@@ -18,10 +18,24 @@ def assign_priority(finding: Finding, *, context: str = "unknown", internet_faci
     severity = finding.severity.value
     confidence = finding.confidence.value
     external = context == "external" or internet_facing
-    if severity == "critical" and confidence == "Confirmed":
+    if finding.kev and confidence in {"Confirmed", "Likely", "Needs Manual Validation"}:
         finding.priority = "P1"
-    elif finding.kev and external and confidence in {"Confirmed", "Likely"}:
+    elif severity == "critical" and confidence in {"Confirmed", "Likely"}:
         finding.priority = "P1"
+    elif (
+        finding.exploit_available
+        and severity in {"critical", "high"}
+        and confidence in {"Confirmed", "Likely", "Needs Manual Validation"}
+    ):
+        finding.priority = "P1"
+    elif (
+        finding.epss is not None
+        and finding.epss >= 0.5
+        and severity in {"critical", "high", "medium"}
+    ):
+        finding.priority = "P2"
+    elif finding.exploit_available and confidence in {"Confirmed", "Likely", "Needs Manual Validation"}:
+        finding.priority = "P2"
     elif severity in {"critical", "high"} and confidence in {"Confirmed", "Likely"}:
         finding.priority = "P2"
     elif severity in {"high", "medium"}:

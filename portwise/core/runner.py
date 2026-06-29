@@ -269,6 +269,14 @@ def run_scan(
     elif progress:
         progress.skip_phase("CVE enrichment", "CVE enrichment disabled by profile.")
 
+    if not dry_run:
+        from portwise.intelligence.threat_intel import enrich_findings_with_local_threat_intel
+        state.module_errors.extend(enrich_findings_with_local_threat_intel(
+            run.findings,
+            context=str(module_config.get("context", "unknown")),
+            internet_facing=bool(module_config.get("internet_facing", False)),
+        ))
+
     _run_exploit_intel_phase(
         config=config,
         run=run,
@@ -444,6 +452,13 @@ def _run_exploit_intel_phase(
         progress.start_phase("Exploit intel", f"checking exploit availability for {len(cve_findings)} CVE finding(s)")
     notes = annotate_findings_with_exploits(run.findings, {"exploit_intel": intel_cfg})
     state.module_errors.extend(notes)
+    from portwise.intelligence.risk_scoring import assign_priority
+    for finding in run.findings:
+        assign_priority(
+            finding,
+            context=str(config.project.get("context", "unknown")),
+            internet_facing=bool(config.scanner.get("internet_facing", False)),
+        )
     flagged = sum(1 for f in run.findings if f.exploit_available)
     if progress:
         progress.finish_phase("Exploit intel", message=f"{flagged} finding(s) have a known exploit")
@@ -641,6 +656,14 @@ def analyze_assets(
         run.findings.extend(cve_findings)
         run.evidence.extend([evidence for finding in cve_findings for evidence in finding.evidence])
         run.metadata["cve_notes"] = cve_notes
+    from portwise.intelligence.threat_intel import enrich_findings_with_local_threat_intel
+    run.metadata.setdefault("module_errors", []).extend(
+        enrich_findings_with_local_threat_intel(
+            run.findings,
+            context=str(analyze_cfg.get("context", "unknown")),
+            internet_facing=bool(analyze_cfg.get("internet_facing", False)),
+        )
+    )
     run.findings = dedupe_findings(run.findings)
     run.finish()
     return run

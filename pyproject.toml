@@ -62,6 +62,8 @@ portwise = [
   "data/exploitdb/*.md",
   "data/cve/*.json",
   "data/cve/*.md",
+  "data/threat_intel/*.json",
+  "data/threat_intel/*.md",
   "data/secrets/*.toml",
   "data/secrets/*.md",
 ]

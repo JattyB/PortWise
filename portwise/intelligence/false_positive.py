@@ -169,6 +169,7 @@ def _merge_finding(target: Finding, source: Finding) -> None:
     target.kev = target.kev or source.kev
     if target.epss is None or (source.epss is not None and source.epss > target.epss):
         target.epss = source.epss
+        target.epss_percentile = source.epss_percentile
     if _semantic_title_group(target.title) == "headers":
         target.title = "Missing HTTP Security Headers"
         target.description = "Multiple recommended HTTP response security headers are absent."

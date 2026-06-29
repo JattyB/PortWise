@@ -17,6 +17,7 @@ HTTP guards, hard per-service deadlines, and local CPE-based CVE matching. P1
 adds semantic deduplication, evidence merging, severity calibration, and
 client-report cleanup. P2 adds native high-signal service exploit conditions
 for the backdoored and command-execution services exposed by Metasploitable2.
+P3 adds packaged EPSS/KEV enrichment and exploitability-aware priority.
 
 ## Hardening Phases L-P
 

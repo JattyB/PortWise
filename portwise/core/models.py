@@ -104,6 +104,7 @@ class Finding:
     cvss: float | None = None
     cvss_vector: str | None = None
     epss: float | None = None
+    epss_percentile: float | None = None
     kev: bool = False
     exploit_available: bool = False
     exploit_refs: list[str] = field(default_factory=list)

@@ -1,5 +1,19 @@
 # Changelog
 
+## Metasploitable2 remediation — P3
+
+- Added packaged FIRST EPSS records with probability, percentile, and date,
+  plus a CISA KEV subset preserving the catalog schema.
+- CVE findings are enriched offline, including service-specific exploit
+  findings that do not originate in the local CVE corpus.
+- Priority now combines severity, confidence, KEV, EPSS, and packaged
+  ExploitDB availability. KEV and high-confidence critical exploits are P1;
+  high-EPSS CVEs outrank generic cleartext findings.
+- EPSS percentile and KEV status are surfaced in HTML, PDF, CSV, and JSON.
+- Live WSL validation populated EPSS for all Metasploitable2 CVEs. None of the
+  validated legacy CVEs are currently present in CISA KEV; they remain
+  prioritized by severity, EPSS, and exploit availability.
+
 ## Metasploitable2 remediation — P2
 
 - Added native service-exploit correlation for the vsftpd 2.3.4 backdoor,

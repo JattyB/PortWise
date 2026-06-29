@@ -651,13 +651,17 @@ def _cves_html(cves: list[dict[str, Any]]) -> str:
         cid = esc(c.get("cve_id", ""))
         cvss = c.get("cvss_score")
         epss = c.get("epss_score")
+        percentile = c.get("epss_percentile")
         kev = c.get("kev", False)
         desc = esc(c.get("description", "")[:200])
         refs = c.get("references", []) or []
         kev_badge = '<span class="kev-badge">KEV</span>' if kev else ""
         scores = " ".join(filter(None, [
             f'CVSS {cvss:.1f}' if isinstance(cvss, (int, float)) else "",
-            f'EPSS {float(epss):.3f}' if epss is not None else "",
+            (
+                f'EPSS {float(epss):.3f}'
+                + (f' / {float(percentile) * 100:.1f}th percentile' if percentile is not None else '')
+            ) if epss is not None else "",
         ]))
         ref_links = " ".join(
             f'<a href="{esc(r)}" target="_blank" rel="noopener">ref</a>'
@@ -835,6 +839,7 @@ def _cve_section(findings: list[dict[str, Any]]) -> str:
             cid = esc(c.get("cve_id", ""))
             cvss = c.get("cvss_score")
             epss = c.get("epss_score")
+            percentile = c.get("epss_percentile")
             kev = c.get("kev", False)
             desc = esc(c.get("description", "")[:300])
             refs = c.get("references", []) or []
@@ -846,6 +851,8 @@ def _cve_section(findings: list[dict[str, Any]]) -> str:
             )
             cvss_str = f'CVSS {cvss:.1f}' if isinstance(cvss, (int, float)) else ""
             epss_str = f'EPSS {float(epss):.3f}' if epss is not None else ""
+            if percentile is not None:
+                epss_str += f' / {float(percentile) * 100:.1f}th percentile'
             parts.append(
                 f'<div class="cve-item">'
                 f'<span class="cve-id">{cid}</span>{kev_badge}'
