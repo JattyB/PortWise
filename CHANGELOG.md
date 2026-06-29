@@ -1,5 +1,15 @@
 # Changelog
 
+## Metasploitable2 remediation — P2
+
+- Added native service-exploit correlation for the vsftpd 2.3.4 backdoor,
+  UnrealIRCd backdoor, exposed distccd command execution, Samba 3.0.20
+  username-map command execution, and unauthenticated root bind shells.
+- Findings use exact version, product/port, banner, and SMB null-session
+  evidence. They enter the normal CVE deduplication and packaged ExploitDB
+  enrichment path.
+- Live WSL validation confirmed all five conditions on `192.168.1.15`.
+
 ## Metasploitable2 remediation — P1
 
 - Finding deduplication now groups semantic endpoint issues, merges evidence,

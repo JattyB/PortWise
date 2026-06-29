@@ -15,7 +15,8 @@ implemented in order, one commit per phase, tests green throughout.
 The Metasploitable2 remediation loop is in progress. P0 adds binary-protocol
 HTTP guards, hard per-service deadlines, and local CPE-based CVE matching. P1
 adds semantic deduplication, evidence merging, severity calibration, and
-client-report cleanup.
+client-report cleanup. P2 adds native high-signal service exploit conditions
+for the backdoored and command-execution services exposed by Metasploitable2.
 
 ## Hardening Phases L-P
 

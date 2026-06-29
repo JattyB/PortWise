@@ -228,6 +228,18 @@ def run_scan(
         if progress:
             progress.update_counters(findings_found=len(run.findings), modules_completed=len(module_results), modules_total=len(module_results))
             progress.finish_phase("Module execution", message=f"{len(module_results)} module target runs, {len(module_findings)} findings")
+    if not dry_run:
+        from portwise.intelligence.service_exploits import detect_known_service_exploits
+        exploit_condition_findings = detect_known_service_exploits(
+            _services_from_assets(run.assets),
+            run.findings,
+        )
+        run.findings.extend(exploit_condition_findings)
+        run.evidence.extend(
+            evidence
+            for finding in exploit_condition_findings
+            for evidence in finding.evidence
+        )
     if not no_cve and not dry_run and bool(profile.modules.get("cve_enrichment", False)):
         if progress:
             services = _cve_services(run.assets, run.findings)
@@ -613,6 +625,17 @@ def analyze_assets(
     run.findings.extend(module_findings)
     run.evidence.extend([evidence for finding in module_findings for evidence in finding.evidence])
     run.metadata.update(module_summary(module_results))
+    from portwise.intelligence.service_exploits import detect_known_service_exploits
+    exploit_condition_findings = detect_known_service_exploits(
+        _services_from_assets(assets),
+        run.findings,
+    )
+    run.findings.extend(exploit_condition_findings)
+    run.evidence.extend(
+        evidence
+        for finding in exploit_condition_findings
+        for evidence in finding.evidence
+    )
     if not no_cve:
         cve_findings, cve_notes = enrich_services_with_cves(_cve_services(assets, run.findings), Path(".portwise_cache") / "cve", enabled=True)
         run.findings.extend(cve_findings)
