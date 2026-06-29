@@ -1,5 +1,13 @@
 # Changelog
 
+## Metasploitable2 remediation — final validation corrections
+
+- De-duplication now treats the issue identity as `(asset, port, issue)` and
+  merges corroborating TCP/UDP evidence instead of emitting duplicate rows.
+- CVE findings now receive only ExploitDB records explicitly mapped to that
+  CVE. Product/version title matching remains a fallback for records without a
+  CVE, preventing cross-product exploit-reference noise.
+
 ## Metasploitable2 remediation — P3
 
 - Added packaged FIRST EPSS records with probability, percentile, and date,

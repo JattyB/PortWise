@@ -31,13 +31,12 @@ _CONFIDENCE_RANK = {
 def dedupe_findings(findings: list[Finding]) -> list[Finding]:
     """Collapse endpoint issue families and merge all supporting evidence."""
     preferred_by_endpoint = _preferred_issue_families(findings)
-    best: dict[tuple[str, int, str, str], Finding] = {}
-    order: list[tuple[str, int, str, str]] = []
+    best: dict[tuple[str, int, str], Finding] = {}
+    order: list[tuple[str, int, str]] = []
     for finding in findings:
         key = (
             str(finding.asset),
             int(finding.port or 0),
-            str(finding.protocol or ""),
             _semantic_issue(finding, preferred_by_endpoint),
         )
         existing = best.get(key)

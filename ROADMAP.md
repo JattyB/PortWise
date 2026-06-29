@@ -12,7 +12,7 @@ This roadmap drives PortWise to professional-grade PT capability. Phases are
 implemented in order, one commit per phase, tests green throughout.
 
 **Status: Phases 0-7, native rebuild A-K, and hardening Phases L-P complete.**
-The Metasploitable2 remediation loop is in progress. P0 adds binary-protocol
+The Metasploitable2 remediation loop is complete. P0 adds binary-protocol
 HTTP guards, hard per-service deadlines, and local CPE-based CVE matching. P1
 adds semantic deduplication, evidence merging, severity calibration, and
 client-report cleanup. P2 adds native high-signal service exploit conditions

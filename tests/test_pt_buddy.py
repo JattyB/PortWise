@@ -93,6 +93,24 @@ def test_dedupe_keeps_strongest():
     assert smbv1.confidence == Confidence.CONFIRMED
 
 
+def test_dedupe_collapses_same_port_issue_across_transport_protocols():
+    tcp = Finding(
+        title="DNS Version Disclosure", severity=Severity.LOW, asset="10.0.0.1",
+        port=53, protocol="tcp", confidence=Confidence.CONFIRMED,
+        evidence=[Evidence("dns", "TCP response", 5)],
+    )
+    udp = Finding(
+        title="DNS Version Disclosure", severity=Severity.LOW, asset="10.0.0.1",
+        port=53, protocol="udp", confidence=Confidence.CONFIRMED,
+        evidence=[Evidence("dns", "UDP response", 5)],
+    )
+
+    result = dedupe_findings([tcp, udp])
+
+    assert len(result) == 1
+    assert {item.description for item in result[0].evidence} == {"TCP response", "UDP response"}
+
+
 def test_dedupe_merges_exposure_paths_into_protocol_issue():
     generic = Finding(
         title="Exposed TELNET Service Needs Owner Validation",
