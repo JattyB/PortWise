@@ -88,6 +88,20 @@ def test_excel_and_html_report_creation(tmp_path: Path) -> None:
     assert "<html" in html.read_text(encoding="utf-8")
 
 
+def test_excel_report_sanitizes_binary_evidence(tmp_path: Path) -> None:
+    data = {
+        "findings": [{
+            "title": "DNS Version Disclosure",
+            "description": "version.bind response: \x07version\x04bind",
+            "evidence": [],
+        }],
+        "assets": [],
+        "metadata": {"state": {}},
+    }
+    xlsx = write_excel_report(data, tmp_path / "binary-evidence.xlsx")
+    assert xlsx.exists()
+
+
 def test_retest_comparison() -> None:
     old = {"assets": [{"services": [{"host": "203.0.113.10", "port": 80, "protocol": "tcp", "service_name": "http"}]}], "findings": [{"title": "A", "asset": "203.0.113.10", "port": 80}]}
     new = {"assets": [{"services": [{"host": "203.0.113.10", "port": 443, "protocol": "tcp", "service_name": "https"}]}], "findings": [{"title": "B", "asset": "203.0.113.10", "port": 443}]}

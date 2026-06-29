@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 import json
+import re
 import zipfile
 from pathlib import Path
 from typing import Any
 
 from portwise.utils.files import ensure_text, make_json_safe
+
+_ILLEGAL_XLSX_CHARS = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f]")
 
 
 def write_excel_report(data: dict[str, Any], output_path: Path) -> Path:
@@ -183,4 +186,5 @@ def _cell_value(value: Any) -> Any:
         return ", ".join(ensure_text(item) for item in value)
     if isinstance(value, dict):
         return json.dumps(value, sort_keys=True)[:500]
-    return ensure_text(value) if value is not None else ""
+    text = ensure_text(value) if value is not None else ""
+    return _ILLEGAL_XLSX_CHARS.sub("\ufffd", text)

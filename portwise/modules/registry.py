@@ -1121,7 +1121,7 @@ def _simple_finding(
         target=target,
         module=module,
         description=description,
-        recommendation="Validate owner approval, restrict exposure where possible, and harden service configuration.",
+        recommendation="Restrict access to required clients and apply the service-specific remediation below.",
         evidence=evidence,
         confidence=confidence,
         type_="Exposure" if severity in {Severity.HIGH, Severity.MEDIUM} else "Risk Indicator",
