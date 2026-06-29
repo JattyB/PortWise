@@ -76,7 +76,15 @@ def route_assets(assets: list[Asset], *, probe_tls: bool = False) -> dict[str, l
             for key, reason in matched:
                 routes[key].append(_target(service, reason))
             if not matched:
-                routes["unknown_services"].append(_target(service, "No fingerprint route matched."))
+                service_name = str(service.service_name or "").lower()
+                if service_name in NON_HTTP_PROTOCOLS:
+                    reason = (
+                        f"Protocol guard skipped HTTP probing for binary/non-HTTP service "
+                        f"{service_name}; pipeline continued."
+                    )
+                else:
+                    reason = "No fingerprint route matched."
+                routes["unknown_services"].append(_target(service, reason))
     return routes
 
 

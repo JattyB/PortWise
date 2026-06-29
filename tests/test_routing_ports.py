@@ -48,6 +48,7 @@ def test_ajp_product_name_does_not_route_to_http():
     )
     routes = route_assets([_asset(service.host, [service])])
     assert routes["http_targets"] == []
+    assert "Protocol guard skipped HTTP probing" in routes["unknown_services"][0].routing_reason
 
 
 def test_script_banners_do_not_cross_route_smtp_or_postgres_as_dns_tls():

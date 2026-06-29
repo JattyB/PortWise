@@ -12,6 +12,9 @@
 - Report methodology now describes offline packaged CPE enrichment, fallback
   recommendations omit approval boilerplate, and XLSX export sanitizes binary
   protocol evidence.
+- Binary/non-HTTP routing guards now persist an explicit skip note on the
+  service target so operators can distinguish intentional exclusion from a
+  missing probe.
 
 ## Metasploitable2 remediation — P3
 
