@@ -7,6 +7,10 @@
   finding, and anonymous SMB login plus share enumeration is one finding.
 - Repeated database version, missing-header, content-fuzzer, and
   default-credential advisory rows are consolidated across ports.
+- Every critical/high finding now receives a POC artifact with a bounded
+  read-only reproduction command and the matched detection evidence.
+- CVE titles now identify the detected product/version, CVE ID, and concise
+  vulnerability name while preserving manual-validation confidence.
 
 ## Metasploitable2 remediation — final validation corrections
 

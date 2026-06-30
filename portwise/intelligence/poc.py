@@ -34,6 +34,7 @@ class PocItem:
     captured_output: str = ""
     artifact_path: str = ""
     screenshot: str = ""
+    evidence: str = ""
 
     def slug(self) -> str:
         base = f"{self.asset}_{self.port}_{self.title}"
@@ -61,7 +62,18 @@ def _screenshot_from_evidence(finding: dict[str, Any]) -> str | None:
 def _derive_poc(finding: dict[str, Any]) -> str | None:
     title = str(finding.get("title", "")).lower()
     host = finding.get("asset", "")
-    port = finding.get("port") or 0
+    ports = finding.get("affected_ports") or []
+    port = ",".join(str(value) for value in ports) if ports else finding.get("port") or 0
+    if "vsftpd 2.3.4 backdoor" in title:
+        return f"nmap -sV -p{port} --script ftp-anon,banner {host}"
+    if "samba username map script" in title:
+        return f"nmap -sV -p{port} --script smb-protocols,smb-security-mode,smb-os-discovery {host}"
+    if "unrealircd backdoor" in title:
+        return f"nmap -sV -p{port} --script banner {host}"
+    if "distccd remote command execution" in title:
+        return f"nmap -sV -p{port} --script banner {host}"
+    if "root bind shell" in title:
+        return f"nmap -sV -p{port} --script banner {host}"
     if "weak ssh" in title or "deprecated ssh host key" in title:
         return f"ssh-audit {host} -p {port}"
     if "smbv1" in title:
@@ -85,6 +97,10 @@ def _derive_poc(finding: dict[str, Any]) -> str | None:
             if url:
                 break
         return f"curl -sik '{url}'" if url else None
+    if finding.get("cve_id"):
+        return f"nmap -sV -p{port} {host}"
+    if str(finding.get("severity", "")).lower() in {"critical", "high"} and port:
+        return f"nmap -sV -p{port} {host}"
     return None
 
 
@@ -109,8 +125,21 @@ def build_poc_items(run: dict[str, Any], min_severity: str = "low") -> list[PocI
             command=cmd or "",
             note=str(f.get("description", ""))[:300],
             screenshot=screenshot or "",
+            evidence=_evidence_summary(f),
         ))
     return items
+
+
+def _evidence_summary(finding: dict[str, Any]) -> str:
+    lines: list[str] = []
+    for evidence in finding.get("evidence", []) or []:
+        if not isinstance(evidence, dict):
+            continue
+        source = str(evidence.get("source") or "evidence")
+        description = str(evidence.get("description") or "").strip()
+        if description:
+            lines.append(f"{source}: {description}")
+    return "\n".join(lines[:6])
 
 
 def _executable(command: str) -> list[str] | None:
@@ -157,6 +186,8 @@ def write_poc_artifacts(items: list[PocItem], out_dir: Path, capture: bool = Fal
                 f"  {item.command}",
                 "",
             ]
+        if item.evidence:
+            body += ["Matched detection evidence:", item.evidence, ""]
         if item.captured_output:
             body += ["----- CAPTURED OUTPUT (evidence) -----", item.captured_output.strip(), "----- END -----", ""]
         else:

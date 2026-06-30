@@ -38,3 +38,26 @@ def test_write_artifacts(tmp_path: Path):
     # never executed without --capture
     sample = next(f for f in files if f.name != "INDEX.txt")
     assert "PASTE OUTPUT" in sample.read_text()
+
+
+def test_every_critical_and_high_finding_gets_poc_entry_and_evidence(tmp_path: Path):
+    run = {"findings": [
+        {
+            "title": "vsftpd 2.3.4 Backdoor", "severity": "critical",
+            "asset": "10.0.0.5", "port": 21,
+            "evidence": [{"source": "service-exploit-correlation", "description": "exact version matched"}],
+        },
+        {
+            "title": "Unclassified High Finding", "severity": "high",
+            "asset": "10.0.0.5", "port": 9999,
+            "evidence": [{"source": "module", "description": "probe matched"}],
+        },
+    ]}
+
+    items = build_poc_items(run, min_severity="high")
+    assert len(items) == 2
+    assert all(item.command for item in items)
+    assert all(item.evidence for item in items)
+    write_poc_artifacts(items, tmp_path / "poc")
+    text = "\n".join(path.read_text() for path in (tmp_path / "poc").glob("*.txt"))
+    assert "Matched detection evidence:" in text

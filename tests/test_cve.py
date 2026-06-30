@@ -127,6 +127,8 @@ def test_keyword_match_is_possible_and_manual_validation(tmp_path):
     assert finding.confidence == Confidence.POSSIBLE
     assert finding.manual_validation is True
     assert "keyword-match-only" in finding.tags
+    assert finding.title.startswith("tomcat 9.0.0 — CVE-")
+    assert "CVE Match Requires Manual Validation" not in finding.title
 
     # For nginx (backport-sensitive), keyword_only still gets NEEDS_MANUAL_VALIDATION (stricter)
     nginx_finding = _cve_finding(service, {**cve, "match_status": "keyword_only"})

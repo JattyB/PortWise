@@ -109,6 +109,7 @@ class NvdProvider(CachedHttpProvider):
 
             cves.append({
                 "id": cve_obj.get("id"),
+                "summary": _english_description(cve_obj),
                 "cvss": cvss,
                 "cvss_vector": cvss_vector,
                 "severity": _severity_from_cvss(cvss),
@@ -165,6 +166,7 @@ class LocalCveProvider:
             ][:5]
             cves.append({
                 "id": cve_obj.get("id"),
+                "summary": _english_description(cve_obj),
                 "cvss": _cvss(metrics),
                 "cvss_vector": _cvss_vector(metrics),
                 "severity": _severity_from_cvss(_cvss(metrics)),
@@ -422,10 +424,8 @@ def _cve_finding(service: Service, cve: dict[str, Any]) -> Finding:
 
     manual_validation = match_status in ("keyword_only", "version_unknown") or backport_sensitive
 
-    if match_status == "version_matched" and not backport_sensitive:
-        title = "Known Exploited Vulnerability Indicator" if kev else "Known Vulnerable Component Detected"
-    else:
-        title = "CVE Match Requires Manual Validation"
+    component = " ".join(part for part in (service.product, service.version) if part).strip()
+    title = f"{component} — {cve.get('id')} ({_short_cve_name(cve)})"
 
     evidence = Evidence(
         "cve-enrichment",
@@ -469,6 +469,29 @@ def _cve_finding(service: Service, cve: dict[str, Any]) -> Finding:
         finding.tags.append("version-range-unknown")
 
     return assign_priority(finding)
+
+
+def _english_description(cve_obj: dict[str, Any]) -> str:
+    descriptions = cve_obj.get("descriptions", [])
+    for item in descriptions if isinstance(descriptions, list) else []:
+        if isinstance(item, dict) and item.get("lang") == "en" and item.get("value"):
+            return str(item["value"]).strip()
+    return ""
+
+
+def _short_cve_name(cve: dict[str, Any]) -> str:
+    summary = str(cve.get("summary") or "Version-matched vulnerability").strip()
+    summary = summary.split(".", 1)[0].strip()
+    for prefix in (
+        "Apache HTTP Server ", "OpenSSH ", "MySQL ", "PHP ", "Samba ",
+        "vsftpd 2.3.4 ",
+    ):
+        if summary.lower().startswith(prefix.lower()):
+            summary = summary[len(prefix):]
+            break
+    if len(summary) > 72:
+        summary = summary[:69].rstrip() + "..."
+    return summary[:1].upper() + summary[1:] if summary else "Version-matched vulnerability"
 
 
 def _extract_match_status(

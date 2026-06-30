@@ -20,6 +20,8 @@ for the backdoored and command-execution services exposed by Metasploitable2.
 P3 adds packaged EPSS/KEV enrichment and exploitability-aware priority.
 The final report-hardening pass consolidates repeated service instances while
 retaining affected ports and all supporting evidence.
+Critical/high POC completeness and specific CVE naming are enforced in the
+report artifact pipeline.
 
 ## Hardening Phases L-P
 
