@@ -189,9 +189,14 @@ def test_dedupe_rolls_up_host_level_cleartext_web_and_http_component_families():
 def test_dedupe_is_idempotent_and_does_not_mix_phpinfo_with_web_rollup():
     findings = [
         Finding(
-            title="Exposed phpinfo Page", severity=Severity.HIGH,
+            title="Sensitive File/Path Discovered: PHP Info Page", severity=Severity.HIGH,
             asset="h", port=80, confidence=Confidence.CONFIRMED,
             evidence=[Evidence("phpinfo", "phpinfo signature", 5)],
+        ),
+        Finding(
+            title="Exposed phpinfo Page", severity=Severity.HIGH,
+            asset="h", port=80, confidence=Confidence.POSSIBLE,
+            evidence=[Evidence("safe-path", "HTTP 200", 3)],
         ),
         Finding(
             title="Sensitive File/Path Discovered: Test Directory",
@@ -213,7 +218,7 @@ def test_dedupe_is_idempotent_and_does_not_mix_phpinfo_with_web_rollup():
     assert len(twice) == 2
     phpinfo = next(finding for finding in twice if finding.title == "Exposed phpinfo Page")
     web = next(finding for finding in twice if finding.title == "Web Content Discovery Results")
-    assert [item.source for item in phpinfo.evidence] == ["phpinfo"]
+    assert {item.source for item in phpinfo.evidence} == {"phpinfo", "safe-path"}
     assert {item.source for item in web.evidence} == {"content", "fuzzer"}
 
 

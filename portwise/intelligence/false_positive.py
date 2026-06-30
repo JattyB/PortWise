@@ -92,6 +92,10 @@ def _semantic_issue(
 
     if finding.cve_id:
         return f"cve:{str(finding.cve_id).upper()}"
+    # Specific sensitive-path findings must be classified before the generic
+    # web-content family.
+    if "php info page" in title or "phpinfo page" in title:
+        return "exposed-phpinfo"
     if title in {
         "smb null session accepted", "smb share enumeration",
         "smb null session and share enumeration",
@@ -126,8 +130,6 @@ def _semantic_issue(
         return "http-component-version-disclosure"
     if title in {"http framework version disclosure", "php detect"}:
         return "http-component-version-disclosure"
-    if "php info page" in title or "phpinfo page" in title:
-        return "exposed-phpinfo"
     if title == "exposed phpinfo page":
         return "exposed-phpinfo"
 

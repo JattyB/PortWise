@@ -24,6 +24,8 @@
   real-issue count instead of emitting one row per service instance.
 - Semantic de-duplication is idempotent across pipeline passes; normalized
   roll-up titles cannot absorb evidence from unrelated phpinfo findings.
+- phpinfo-specific classification now precedes generic sensitive-path
+  roll-ups, matching the content-discovery engine's raw finding title.
 
 ## Metasploitable2 remediation — final validation corrections
 
