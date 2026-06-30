@@ -28,6 +28,8 @@
   roll-ups, matching the content-discovery engine's raw finding title.
 - SMB metadata reports `domain_or_workgroup=not disclosed` when the server
   returns an empty identity field instead of silently omitting the result.
+- HTML/PDF evidence renders Impacket signing, dialect, OS, server name, and
+  domain/workgroup status directly from captured SMB evidence.
 
 ## Metasploitable2 remediation — final validation corrections
 
