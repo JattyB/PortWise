@@ -1,5 +1,13 @@
 # Changelog
 
+## Metasploitable2 report hardening
+
+- Finding consolidation now merges selected identical issue families across
+  service instances and records every affected port. SMBv1 is one host-level
+  finding, and anonymous SMB login plus share enumeration is one finding.
+- Repeated database version, missing-header, content-fuzzer, and
+  default-credential advisory rows are consolidated across ports.
+
 ## Metasploitable2 remediation — final validation corrections
 
 - De-duplication now treats the issue identity as `(asset, port, issue)` and

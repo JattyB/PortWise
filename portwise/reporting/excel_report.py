@@ -92,10 +92,10 @@ def _summary_rows(data: dict[str, Any]) -> list[list[Any]]:
 
 
 def _finding_rows(findings: list[dict[str, Any]]) -> list[list[Any]]:
-    headers = ["Priority", "Status", "Severity", "Confidence", "Evidence Strength", "False Positive Risk", "Manual Validation", "Title", "Asset", "Port", "Protocol", "Module", "Type", "CVE", "Description", "Evidence", "Recommendation"]
+    headers = ["Priority", "Status", "Severity", "Confidence", "Evidence Strength", "False Positive Risk", "Manual Validation", "Title", "Asset", "Port", "Affected Ports", "Protocol", "Module", "Type", "CVE", "Description", "Evidence", "Recommendation"]
     rows = [headers]
     for f in findings:
-        rows.append([f.get("priority"), f.get("status"), f.get("severity"), f.get("confidence"), f.get("evidence_strength"), f.get("false_positive_risk"), f.get("manual_validation"), f.get("title"), f.get("asset"), f.get("port"), f.get("protocol"), f.get("module"), f.get("type"), f.get("cve_id"), f.get("description"), _short_evidence(f), f.get("recommendation")])
+        rows.append([f.get("priority"), f.get("status"), f.get("severity"), f.get("confidence"), f.get("evidence_strength"), f.get("false_positive_risk"), f.get("manual_validation"), f.get("title"), f.get("asset"), f.get("port"), f.get("affected_ports"), f.get("protocol"), f.get("module"), f.get("type"), f.get("cve_id"), f.get("description"), _short_evidence(f), f.get("recommendation")])
     return rows
 
 

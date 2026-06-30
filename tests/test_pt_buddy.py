@@ -111,6 +111,60 @@ def test_dedupe_collapses_same_port_issue_across_transport_protocols():
     assert {item.description for item in result[0].evidence} == {"TCP response", "UDP response"}
 
 
+def test_dedupe_collapses_cross_port_smb_instances_and_merges_share_evidence():
+    findings = [
+        Finding(
+            title="SMBv1 Enabled", severity=Severity.HIGH, asset="10.0.0.1",
+            port=port, protocol="tcp", confidence=Confidence.CONFIRMED,
+            evidence=[Evidence("smb", f"SMBv1 on {port}", 5)],
+        )
+        for port in (139, 445)
+    ]
+    findings.extend([
+        Finding(
+            title="SMB Null Session Accepted", severity=Severity.MEDIUM,
+            asset="10.0.0.1", port=139, protocol="tcp",
+            confidence=Confidence.CONFIRMED,
+            evidence=[Evidence("smb", "anonymous login", 5)],
+        ),
+        Finding(
+            title="SMB Share Enumeration", severity=Severity.INFO,
+            asset="10.0.0.1", port=445, protocol="tcp",
+            confidence=Confidence.CONFIRMED,
+            evidence=[Evidence("smb", "shares: IPC$, tmp", 4)],
+        ),
+    ])
+
+    result = dedupe_findings(findings)
+
+    assert len(result) == 2
+    assert all(finding.affected_ports == [139, 445] for finding in result)
+    anonymous = next(finding for finding in result if "Null Session" in finding.title)
+    assert anonymous.title == "SMB Null Session and Share Enumeration"
+    assert len(anonymous.evidence) == 2
+
+
+def test_dedupe_collapses_selected_repeated_issue_families_across_ports():
+    findings = [
+        Finding(title=title, severity=Severity.LOW, asset="10.0.0.1", port=port)
+        for title, port in [
+            ("Database Version Disclosure", 3306),
+            ("Database Version Disclosure", 5432),
+            ("Missing HTTP Security Headers", 80),
+            ("Missing HTTP Security Headers", 8180),
+            ("Content Fuzzer Discovered Additional Paths", 80),
+            ("Content Fuzzer Discovered Additional Paths", 8180),
+            ("Default Credentials Should Be Manually Verified — mysql", 3306),
+            ("Default Credentials Should Be Manually Verified — postgres", 5432),
+        ]
+    ]
+
+    result = dedupe_findings(findings)
+
+    assert len(result) == 4
+    assert all(finding.affected_ports == sorted(finding.affected_ports) for finding in result)
+
+
 def test_dedupe_merges_exposure_paths_into_protocol_issue():
     generic = Finding(
         title="Exposed TELNET Service Needs Owner Validation",

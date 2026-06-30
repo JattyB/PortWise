@@ -18,6 +18,8 @@ adds semantic deduplication, evidence merging, severity calibration, and
 client-report cleanup. P2 adds native high-signal service exploit conditions
 for the backdoored and command-execution services exposed by Metasploitable2.
 P3 adds packaged EPSS/KEV enrichment and exploitability-aware priority.
+The final report-hardening pass consolidates repeated service instances while
+retaining affected ports and all supporting evidence.
 
 ## Hardening Phases L-P
 

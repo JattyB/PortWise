@@ -580,7 +580,7 @@ def _finding_row_pair(f: dict[str, Any], idx: int) -> list[str]:
     conf = _norm(f.get("confidence", ""))
     title = esc(f.get("title", "—"))
     asset = esc(str(f.get("asset", "—")))
-    port = esc(str(f.get("port", "")))
+    port = esc(_finding_ports(f))
     module = esc(str(f.get("module", "—")))
     fp = esc(str(f.get("false_positive_risk", "—")))
     es = int(f.get("evidence_strength", 0) or 0)
@@ -626,6 +626,13 @@ def _finding_row_pair(f: dict[str, Any], idx: int) -> list[str]:
     )
 
     return [row, detail]
+
+
+def _finding_ports(finding: dict[str, Any]) -> str:
+    ports = finding.get("affected_ports") or []
+    if ports:
+        return ",".join(str(port) for port in ports)
+    return str(finding.get("port", "") or "")
 
 
 def _exploit_html(f: dict[str, Any]) -> str:

@@ -29,15 +29,17 @@ _CONFIDENCE_RANK = {
 
 
 def dedupe_findings(findings: list[Finding]) -> list[Finding]:
-    """Collapse endpoint issue families and merge all supporting evidence."""
+    """Collapse issue families and merge endpoint instances and evidence."""
     preferred_by_endpoint = _preferred_issue_families(findings)
-    best: dict[tuple[str, int, str], Finding] = {}
-    order: list[tuple[str, int, str]] = []
+    best: dict[tuple[str, int | str, str], Finding] = {}
+    order: list[tuple[str, int | str, str]] = []
     for finding in findings:
+        issue = _semantic_issue(finding, preferred_by_endpoint)
+        scope: int | str = "*" if issue in _CROSS_INSTANCE_ISSUES else int(finding.port or 0)
         key = (
             str(finding.asset),
-            int(finding.port or 0),
-            _semantic_issue(finding, preferred_by_endpoint),
+            scope,
+            issue,
         )
         existing = best.get(key)
         if existing is None:
@@ -53,6 +55,16 @@ def dedupe_findings(findings: list[Finding]) -> list[Finding]:
         else:
             _merge_finding(existing, finding)
     return [best[key] for key in order]
+
+
+_CROSS_INSTANCE_ISSUES = {
+    "smbv1-enabled",
+    "smb-anonymous-enumeration",
+    "database-version-disclosure",
+    "content-fuzzer-additional-paths",
+    "missing-http-security-headers",
+    "default-credentials-advisory",
+}
 
 
 def _preferred_issue_families(findings: list[Finding]) -> dict[tuple[str, int, str], set[str]]:
@@ -75,6 +87,14 @@ def _semantic_issue(
 
     if finding.cve_id:
         return f"cve:{str(finding.cve_id).upper()}"
+    if title in {"smb null session accepted", "smb share enumeration"}:
+        return "smb-anonymous-enumeration"
+    if title == "smbv1 enabled":
+        return "smbv1-enabled"
+    if title == "content fuzzer discovered additional paths":
+        return "content-fuzzer-additional-paths"
+    if title.startswith("default credentials should be manually verified"):
+        return "default-credentials-advisory"
     if title.startswith("missing ") and (
         "header" in title or "content security policy" in title or "x-frame-options" in title
         or "x-content-type-options" in title
@@ -153,6 +173,12 @@ def _generic_exposure_title(title: str) -> bool:
 
 
 def _merge_finding(target: Finding, source: Finding) -> None:
+    ports = {
+        int(port)
+        for port in [target.port, source.port, *target.affected_ports, *source.affected_ports]
+        if port
+    }
+    target.affected_ports = sorted(ports)
     evidence_ids = {item.id for item in target.evidence}
     for item in source.evidence:
         if item.id not in evidence_ids:
@@ -195,6 +221,12 @@ def _merge_finding(target: Finding, source: Finding) -> None:
             "or host-key algorithms."
         )
         target.recommendation = "Disable the deprecated algorithms and retain modern SHA-2 and AEAD suites."
+    if _semantic_issue(target, {}) == "smb-anonymous-enumeration":
+        target.title = "SMB Null Session and Share Enumeration"
+        target.description = (
+            "An anonymous SMB session enumerated network shares without credentials."
+        )
+        target.recommendation = "Disable anonymous SMB sessions and restrict share access to required accounts."
 
 
 def _semantic_title_group(title: str) -> str:

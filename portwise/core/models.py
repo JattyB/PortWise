@@ -88,6 +88,7 @@ class Finding:
     severity: Severity
     asset: str
     port: int | None = None
+    affected_ports: list[int] = field(default_factory=list)
     protocol: str | None = None
     service: str | None = None
     description: str = ""
