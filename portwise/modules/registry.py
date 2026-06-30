@@ -1630,7 +1630,13 @@ def _run_impacket_smb_enum(target: dict[str, Any], config: dict[str, Any]) -> li
         f.recommendation = "Require SMB message signing and verify the policy on every SMB endpoint."
         findings.append(f)
     if result.os or result.domain or result.server_name:
-        details = {k: v for k, v in {"os": result.os, "domain": result.domain, "server_name": result.server_name, "dialect": result.dialect, "signing": result.signing}.items() if v}
+        details = {
+            "os": result.os or "not disclosed",
+            "domain_or_workgroup": result.domain or "not disclosed",
+            "server_name": result.server_name or "not disclosed",
+            "dialect": result.dialect or "unknown",
+            "signing": result.signing,
+        }
         f = _simple_finding(
             "smb", target, "SMB Impacket OS/Domain Enumeration", Severity.LOW,
             "Impacket disclosed SMB server metadata: " + ", ".join(f"{k}={v}" for k, v in details.items()) + ".",

@@ -26,6 +26,8 @@
   roll-up titles cannot absorb evidence from unrelated phpinfo findings.
 - phpinfo-specific classification now precedes generic sensitive-path
   roll-ups, matching the content-discovery engine's raw finding title.
+- SMB metadata reports `domain_or_workgroup=not disclosed` when the server
+  returns an empty identity field instead of silently omitting the result.
 
 ## Metasploitable2 remediation — final validation corrections
 

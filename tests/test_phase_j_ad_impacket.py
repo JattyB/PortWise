@@ -109,6 +109,8 @@ def test_smb_module_emits_impacket_findings_and_control_does_not_emit(monkeypatc
     assert signing.evidence[0].data["os"] == "Windows Server 2019"
     assert signing.evidence[0].data["domain"] == "CORP"
     assert signing.evidence[0].data["dialect"] == "0x0311"
+    metadata = next(f for f in result.findings if f.title == "SMB Impacket OS/Domain Enumeration")
+    assert "domain_or_workgroup=CORP" in metadata.description
 
     monkeypatch.setattr("portwise.scanners.ad_impacket.enumerate_smb", lambda *a, **k: enumerate_smb("dc01.corp.local", conn_factory=_smb_factory(null=False)))
     control = SmbSafeModule().run(target, {"smb": {"impacket_enum": True}, "smb_native_probe": False})
