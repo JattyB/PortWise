@@ -46,3 +46,17 @@ def test_nmap_parser_inline_sample(tmp_path) -> None:
     assert service.product == "nginx"
     assert service.cpes == ["cpe:/a:nginx:nginx:1.24.0"]
     assert service.scripts["ssl-cert"]["output"] == "subject=example"
+
+
+def test_nmap_parser_normalizes_rpcbind_on_port_2049_to_nfs(tmp_path) -> None:
+    path = tmp_path / "nfs.xml"
+    path.write_text(
+        """<nmaprun><host><address addr="192.0.2.10" addrtype="ipv4"/>
+        <ports><port protocol="tcp" portid="2049"><state state="open"/>
+        <service name="rpcbind"/></port></ports></host></nmaprun>""",
+        encoding="utf-8",
+    )
+
+    service = parse_nmap_xml(path)[0].services[0]
+
+    assert service.service_name == "nfs"

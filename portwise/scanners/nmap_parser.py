@@ -77,14 +77,18 @@ def parse_nmap_xml(path: Path | str) -> list[Asset]:
                 data = _parse_nse_element(script_el)
                 scripts[sid] = {"output": output, "data": data}
             cpes = [cpe.text.strip() for cpe in port_el.findall("./service/cpe") if cpe.text]
+            port = int(port_el.attrib.get("portid", "0"))
+            service_name = service_el.attrib.get("name", "") if service_el is not None else ""
+            if port == 2049 and service_name in {"rpcbind", "sunrpc"}:
+                service_name = "nfs"
             service = Service(
                 host=ip,
                 hostname=hostnames[0] if hostnames else None,
-                port=int(port_el.attrib.get("portid", "0")),
+                port=port,
                 protocol=port_el.attrib.get("protocol", ""),
                 state=state_el.attrib.get("state", "") if state_el is not None else "",
                 reason=state_el.attrib.get("reason", "") if state_el is not None else "",
-                service_name=service_el.attrib.get("name", "") if service_el is not None else "",
+                service_name=service_name,
                 product=service_el.attrib.get("product", "") if service_el is not None else "",
                 version=service_el.attrib.get("version", "") if service_el is not None else "",
                 extrainfo=service_el.attrib.get("extrainfo", "") if service_el is not None else "",

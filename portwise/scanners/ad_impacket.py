@@ -126,15 +126,19 @@ def enumerate_smb(
     try:
         result.signing = _smb_signing(conn)
         result.dialect = _maybe_call_str(conn, "getDialect")
-        result.os = _maybe_call_str(conn, "getServerOS")
-        result.domain = _maybe_call_str(conn, "getServerDomain")
-        result.server_name = _maybe_call_str(conn, "getServerName")
         try:
             conn.login("", "", "")
             result.null_session = True
         except Exception as exc:
             result.error = _safe_error(exc)
             return result
+        # SMB1 session setup and SMB2 authentication populate the peer identity
+        # fields in Impacket. Read them after login, not after negotiate alone.
+        result.signing = _smb_signing(conn)
+        result.dialect = _maybe_call_str(conn, "getDialect")
+        result.os = _maybe_call_str(conn, "getServerOS")
+        result.domain = _maybe_call_str(conn, "getServerDomain")
+        result.server_name = _maybe_call_str(conn, "getServerName")
         result.shares = [_parse_share(item) for item in _maybe_call(conn, "listShares", default=[]) or []]
         return result
     finally:

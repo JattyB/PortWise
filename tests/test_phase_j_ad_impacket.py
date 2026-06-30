@@ -104,6 +104,11 @@ def test_smb_module_emits_impacket_findings_and_control_does_not_emit(monkeypatc
     assert "SMB Null Session Accepted" in titles
     assert "SMB Share Enumeration" in titles
     assert "SMB Impacket OS/Domain Enumeration" in titles
+    assert "SMB Signing Not Required" in titles
+    signing = next(f for f in result.findings if f.title == "SMB Signing Not Required")
+    assert signing.evidence[0].data["os"] == "Windows Server 2019"
+    assert signing.evidence[0].data["domain"] == "CORP"
+    assert signing.evidence[0].data["dialect"] == "0x0311"
 
     monkeypatch.setattr("portwise.scanners.ad_impacket.enumerate_smb", lambda *a, **k: enumerate_smb("dc01.corp.local", conn_factory=_smb_factory(null=False)))
     control = SmbSafeModule().run(target, {"smb": {"impacket_enum": True}, "smb_native_probe": False})

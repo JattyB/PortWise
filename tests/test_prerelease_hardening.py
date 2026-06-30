@@ -1,4 +1,5 @@
 from pathlib import Path
+import struct
 
 from portwise.intelligence.importers import import_nessus_csv, import_testssl_json
 from portwise.modules import registry
@@ -28,6 +29,18 @@ def test_dns_module_recursion_and_zone_transfer(monkeypatch) -> None:
     assert "DNS Recursion Enabled" in titles
     assert "DNS Version Disclosure" in titles
     assert "DNS Zone Transfer Allowed" in titles
+
+
+def test_dns_txt_response_parser_strips_packet_and_length_prefix_bytes() -> None:
+    question = b"\x07version\x04bind\x00" + struct.pack("!HH", 16, 3)
+    answer = (
+        b"\xc0\x0c"
+        + struct.pack("!HHIH", 16, 3, 0, 6)
+        + b"\x059.4.2"
+    )
+    packet = struct.pack("!HHHHHH", 0x5058, 0x8400, 1, 1, 0, 0) + question + answer
+
+    assert registry._parse_dns_txt_response(packet) == "9.4.2"
 
 
 def test_snmp_module_default_community(monkeypatch) -> None:

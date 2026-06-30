@@ -344,6 +344,7 @@ class ExposureModule(PortWiseModule):
             "rdp": Severity.MEDIUM,
             "winrm": Severity.MEDIUM,
             "snmp": Severity.MEDIUM,
+            "nfs": Severity.MEDIUM,
             "redis": Severity.HIGH,
             "mongodb": Severity.HIGH,
             "elasticsearch": Severity.HIGH,
@@ -1194,9 +1195,59 @@ def _dns_chaos_version(host: str, port: int, timeout: float) -> str | None:
             sock.settimeout(timeout)
             sock.sendto(query, (host, port))
             data, _ = sock.recvfrom(512)
-        return _truncate(data[12:], 160) if len(data) > 12 else None
+        return _parse_dns_txt_response(data)
     except Exception:
         return None
+
+
+def _parse_dns_txt_response(data: bytes) -> str | None:
+    """Extract printable TXT strings from a DNS response without rendering packet bytes."""
+    if len(data) < 12:
+        return None
+    try:
+        _packet_id, _flags, qdcount, ancount, _nscount, _arcount = struct.unpack(
+            "!HHHHHH", data[:12]
+        )
+        offset = 12
+        for _ in range(qdcount):
+            offset = _skip_dns_name(data, offset)
+            offset += 4
+        values: list[str] = []
+        for _ in range(ancount):
+            offset = _skip_dns_name(data, offset)
+            if offset + 10 > len(data):
+                break
+            rtype, _rclass, _ttl, rdlength = struct.unpack("!HHIH", data[offset:offset + 10])
+            offset += 10
+            rdata = data[offset:offset + rdlength]
+            offset += rdlength
+            if rtype != 16:
+                continue
+            pos = 0
+            while pos < len(rdata):
+                size = rdata[pos]
+                pos += 1
+                chunk = rdata[pos:pos + size]
+                pos += size
+                text = chunk.decode("utf-8", errors="replace").strip()
+                if text:
+                    values.append(text)
+        clean = " ".join(values)
+        return clean or None
+    except (IndexError, struct.error):
+        return None
+
+
+def _skip_dns_name(data: bytes, offset: int) -> int:
+    while offset < len(data):
+        size = data[offset]
+        if size & 0xC0 == 0xC0:
+            return offset + 2
+        offset += 1
+        if size == 0:
+            return offset
+        offset += size
+    raise IndexError("truncated DNS name")
 
 
 def _dns_axfr_check(host: str, port: int, zone: str, timeout: float) -> bool:
@@ -1549,7 +1600,11 @@ def _run_impacket_smb_enum(target: dict[str, Any], config: dict[str, Any]) -> li
             f"Impacket established an anonymous SMB session. Enumerated {len(share_names)} share(s): {', '.join(share_names[:8]) or 'none'}.",
             strength=5, confidence=Confidence.CONFIRMED, manual=False, category=FindingCategory.VULNERABILITY,
         )
-        f.evidence[0].data.update({"engine": "impacket", "shares": share_names, "domain": result.domain, "server_name": result.server_name})
+        f.evidence[0].data.update({
+            "engine": "impacket", "shares": share_names, "domain": result.domain,
+            "server_name": result.server_name, "os": result.os,
+            "dialect": result.dialect, "signing": result.signing,
+        })
         findings.append(f)
     if result.shares:
         share_names = sorted(share.name for share in result.shares if share.name)
@@ -1559,6 +1614,20 @@ def _run_impacket_smb_enum(target: dict[str, Any], config: dict[str, Any]) -> li
             strength=4, confidence=Confidence.CONFIRMED, manual=False, category=FindingCategory.INFORMATION,
         )
         f.evidence[0].data.update({"engine": "impacket", "shares": [{"name": share.name, "remark": share.remark, "type": share.share_type} for share in result.shares]})
+        findings.append(f)
+    if result.signing == "not_required":
+        f = _simple_finding(
+            "smb", target, "SMB Signing Not Required", Severity.MEDIUM,
+            "Impacket confirmed that the SMB server accepts sessions without mandatory message signing.",
+            strength=5, confidence=Confidence.CONFIRMED, manual=False,
+            category=FindingCategory.VULNERABILITY,
+        )
+        f.evidence[0].data.update({
+            "engine": "impacket", "signing": result.signing,
+            "dialect": result.dialect, "os": result.os, "domain": result.domain,
+            "server_name": result.server_name,
+        })
+        f.recommendation = "Require SMB message signing and verify the policy on every SMB endpoint."
         findings.append(f)
     if result.os or result.domain or result.server_name:
         details = {k: v for k, v in {"os": result.os, "domain": result.domain, "server_name": result.server_name, "dialect": result.dialect, "signing": result.signing}.items() if v}

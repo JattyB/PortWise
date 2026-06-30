@@ -60,6 +60,8 @@ def dedupe_findings(findings: list[Finding]) -> list[Finding]:
 _CROSS_INSTANCE_ISSUES = {
     "smbv1-enabled",
     "smb-anonymous-enumeration",
+    "smb-signing-not-required",
+    "smb-metadata-enumeration",
     "database-version-disclosure",
     "content-fuzzer-additional-paths",
     "missing-http-security-headers",
@@ -89,6 +91,10 @@ def _semantic_issue(
         return f"cve:{str(finding.cve_id).upper()}"
     if title in {"smb null session accepted", "smb share enumeration"}:
         return "smb-anonymous-enumeration"
+    if title == "smb signing not required":
+        return "smb-signing-not-required"
+    if title == "smb impacket os/domain enumeration":
+        return "smb-metadata-enumeration"
     if title == "smbv1 enabled":
         return "smbv1-enabled"
     if title == "content fuzzer discovered additional paths":
@@ -227,6 +233,12 @@ def _merge_finding(target: Finding, source: Finding) -> None:
             "An anonymous SMB session enumerated network shares without credentials."
         )
         target.recommendation = "Disable anonymous SMB sessions and restrict share access to required accounts."
+    if _semantic_issue(target, {}) == "default-credentials-advisory":
+        target.title = "Default Credential Exposure Requires Verification"
+        target.description = (
+            "Detected services have documented default-credential patterns; no login was attempted."
+        )
+        target.recommendation = "Verify credentials only when credential testing is in scope."
 
 
 def _semantic_title_group(title: str) -> str:

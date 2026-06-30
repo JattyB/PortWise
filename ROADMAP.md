@@ -22,6 +22,8 @@ The final report-hardening pass consolidates repeated service instances while
 retaining affected ports and all supporting evidence.
 Critical/high POC completeness and specific CVE naming are enforced in the
 report artifact pipeline.
+SMB session metadata, clean DNS TXT evidence, and NFS identity normalization
+close the remaining Metasploitable2 evidence gaps.
 
 ## Hardening Phases L-P
 

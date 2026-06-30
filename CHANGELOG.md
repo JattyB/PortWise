@@ -11,6 +11,13 @@
   read-only reproduction command and the matched detection evidence.
 - CVE titles now identify the detected product/version, CVE ID, and concise
   vulnerability name while preserving manual-validation confidence.
+- Impacket SMB metadata is read after session setup; signing-not-required is a
+  confirmed finding and OS, domain/workgroup, server name, and dialect are
+  retained as evidence.
+- DNS CHAOS TXT parsing now decodes TXT RDATA instead of rendering packet
+  bytes. Nmap `rpcbind` labels on port 2049 normalize to NFS.
+- UnrealIRCd remains `Likely` when based on product/port fingerprinting and
+  carries an explicit bounded confirmation step.
 
 ## Metasploitable2 remediation — final validation corrections
 
