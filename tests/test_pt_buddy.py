@@ -165,6 +165,27 @@ def test_dedupe_collapses_selected_repeated_issue_families_across_ports():
     assert all(finding.affected_ports == sorted(finding.affected_ports) for finding in result)
 
 
+def test_dedupe_rolls_up_host_level_cleartext_web_and_http_component_families():
+    findings = [
+        Finding(title="Cleartext Protocol Exposed — FTP", severity=Severity.MEDIUM, asset="h", port=21),
+        Finding(title="Cleartext Protocol Exposed — Telnet", severity=Severity.MEDIUM, asset="h", port=23),
+        Finding(title="Sensitive File/Path Discovered: Test Directory", severity=Severity.INFO, asset="h", port=80),
+        Finding(title="JavaScript Endpoints Discovered", severity=Severity.INFO, asset="h", port=80),
+        Finding(title="Content Fuzzer Discovered Additional Paths", severity=Severity.INFO, asset="h", port=8180),
+        Finding(title="HTTP Server Version Disclosure", severity=Severity.INFO, asset="h", port=80),
+        Finding(title="HTTP Framework Version Disclosure", severity=Severity.INFO, asset="h", port=80),
+        Finding(title="HTTP Server Version Disclosure", severity=Severity.INFO, asset="h", port=8180),
+    ]
+
+    result = dedupe_findings(findings)
+
+    assert len(result) == 3
+    by_title = {finding.title: finding for finding in result}
+    assert by_title["Cleartext Protocol Services Exposed"].affected_ports == [21, 23]
+    assert by_title["Web Content Discovery Results"].affected_ports == [80, 8180]
+    assert by_title["HTTP Component Version Disclosure"].affected_ports == [80, 8180]
+
+
 def test_dedupe_merges_exposure_paths_into_protocol_issue():
     generic = Finding(
         title="Exposed TELNET Service Needs Owner Validation",
@@ -198,7 +219,7 @@ def test_dedupe_merges_exposure_paths_into_protocol_issue():
     )
     result = dedupe_findings([generic, module, cleartext])
     assert len(result) == 1
-    assert result[0].title == "Cleartext Protocol Exposed — Telnet"
+    assert result[0].title == "Cleartext Protocol Services Exposed"
     assert {item.source for item in result[0].evidence} == {"nmap", "exposure", "plaintext"}
 
 

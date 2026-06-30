@@ -66,6 +66,9 @@ _CROSS_INSTANCE_ISSUES = {
     "content-fuzzer-additional-paths",
     "missing-http-security-headers",
     "default-credentials-advisory",
+    "cleartext-protocol-exposure",
+    "web-content-discovery",
+    "http-component-version-disclosure",
 }
 
 
@@ -94,11 +97,16 @@ def _semantic_issue(
     if title == "smb signing not required":
         return "smb-signing-not-required"
     if title == "smb impacket os/domain enumeration":
-        return "smb-metadata-enumeration"
+        return "smb-anonymous-enumeration"
     if title == "smbv1 enabled":
         return "smbv1-enabled"
-    if title == "content fuzzer discovered additional paths":
-        return "content-fuzzer-additional-paths"
+    if (
+        title == "content fuzzer discovered additional paths"
+        or title == "javascript endpoints discovered"
+        or title.startswith("sensitive file/path discovered:")
+        or "tomcat manager login panel" in title
+    ):
+        return "web-content-discovery"
     if title.startswith("default credentials should be manually verified"):
         return "default-credentials-advisory"
     if title.startswith("missing ") and (
@@ -110,11 +118,11 @@ def _semantic_issue(
         "http service metadata", "http technology fingerprint",
         "apache server detected", "apache detection",
     }:
-        return "http-server-version-disclosure" if "http server version disclosure" in titles else "http-component-fingerprint"
+        return "http-component-version-disclosure" if "http server version disclosure" in titles else "http-component-fingerprint"
     if title == "http server version disclosure":
-        return "http-server-version-disclosure"
+        return "http-component-version-disclosure"
     if title in {"http framework version disclosure", "php detect"}:
-        return "http-framework-version-disclosure"
+        return "http-component-version-disclosure"
     if "php info page" in title or "phpinfo page" in title:
         return "exposed-phpinfo"
     if title == "exposed phpinfo page":
@@ -122,16 +130,14 @@ def _semantic_issue(
 
     if "ftp" in text and _generic_exposure_title(title):
         if any("cleartext protocol exposed" in item and "ftp" in item for item in titles):
-            return "cleartext:ftp"
+            return "cleartext-protocol-exposure"
         return "service-exposure:ftp"
     if "telnet" in text and _generic_exposure_title(title):
         if any("cleartext protocol exposed" in item and "telnet" in item for item in titles):
-            return "cleartext:telnet"
+            return "cleartext-protocol-exposure"
         return "service-exposure:telnet"
     if ("smb" in text or "microsoft-ds" in text or "netbios" in text) and _generic_exposure_title(title):
-        if "smbv1 enabled" in titles:
-            return "smbv1 enabled"
-        return "service-exposure:smb"
+        return "smbv1-enabled"
     if "ssh" in text and _generic_exposure_title(title):
         if "ssh version disclosure" in titles or "legacy ssh service" in titles:
             return "ssh-legacy-version"
@@ -157,9 +163,9 @@ def _semantic_issue(
     if title == "mail server version disclosure":
         return "mail-version-disclosure"
     if title == "ftp cleartext service exposed":
-        return "cleartext:ftp"
+        return "cleartext-protocol-exposure"
     if title.startswith("cleartext protocol exposed"):
-        return "cleartext:" + title.rsplit("—", 1)[-1].strip().lower()
+        return "cleartext-protocol-exposure"
     if title in {"ssh version disclosure", "legacy ssh service"}:
         return "ssh-legacy-version"
     if title in {
@@ -227,18 +233,37 @@ def _merge_finding(target: Finding, source: Finding) -> None:
             "or host-key algorithms."
         )
         target.recommendation = "Disable the deprecated algorithms and retain modern SHA-2 and AEAD suites."
-    if _semantic_issue(target, {}) == "smb-anonymous-enumeration":
+    issue = _semantic_issue(target, {})
+    if issue == "smb-anonymous-enumeration":
         target.title = "SMB Null Session and Share Enumeration"
         target.description = (
             "An anonymous SMB session enumerated network shares without credentials."
         )
         target.recommendation = "Disable anonymous SMB sessions and restrict share access to required accounts."
-    if _semantic_issue(target, {}) == "default-credentials-advisory":
+    if issue == "default-credentials-advisory":
         target.title = "Default Credential Exposure Requires Verification"
         target.description = (
             "Detected services have documented default-credential patterns; no login was attempted."
         )
         target.recommendation = "Verify credentials only when credential testing is in scope."
+    if issue == "cleartext-protocol-exposure":
+        target.title = "Cleartext Protocol Services Exposed"
+        target.description = (
+            "Multiple reachable services permit unencrypted application traffic; "
+            "affected ports and protocol-specific evidence are listed below."
+        )
+        target.recommendation = "Disable cleartext services or require their encrypted equivalents."
+    if issue == "web-content-discovery":
+        target.title = "Web Content Discovery Results"
+        target.description = (
+            "Content discovery identified accessible application, administration, "
+            "test, or client-side endpoint paths across the web services."
+        )
+        target.recommendation = "Review every discovered path and restrict or remove non-public content."
+    if issue == "http-component-version-disclosure":
+        target.title = "HTTP Component Version Disclosure"
+        target.description = "HTTP responses disclose server or framework component versions."
+        target.recommendation = "Remove unnecessary version tokens from HTTP responses."
 
 
 def _semantic_title_group(title: str) -> str:

@@ -18,6 +18,10 @@
   bytes. Nmap `rpcbind` labels on port 2049 normalize to NFS.
 - UnrealIRCd remains `Likely` when based on product/port fingerprinting and
   carries an explicit bounded confirmation step.
+- Host-level roll-ups consolidate cleartext services, web discovery results,
+  HTTP component disclosures, and SMB metadata/exposure while preserving all
+  endpoint evidence. The Metasploitable2 report now approaches the distinct
+  real-issue count instead of emitting one row per service instance.
 
 ## Metasploitable2 remediation — final validation corrections
 

@@ -24,6 +24,8 @@ Critical/high POC completeness and specific CVE naming are enforced in the
 report artifact pipeline.
 SMB session metadata, clean DNS TXT evidence, and NFS identity normalization
 close the remaining Metasploitable2 evidence gaps.
+Host-level semantic roll-ups keep multi-service observations readable without
+discarding per-port evidence.
 
 ## Hardening Phases L-P
 
