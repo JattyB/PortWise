@@ -22,6 +22,8 @@
   HTTP component disclosures, and SMB metadata/exposure while preserving all
   endpoint evidence. The Metasploitable2 report now approaches the distinct
   real-issue count instead of emitting one row per service instance.
+- Semantic de-duplication is idempotent across pipeline passes; normalized
+  roll-up titles cannot absorb evidence from unrelated phpinfo findings.
 
 ## Metasploitable2 remediation — final validation corrections
 

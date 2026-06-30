@@ -92,7 +92,10 @@ def _semantic_issue(
 
     if finding.cve_id:
         return f"cve:{str(finding.cve_id).upper()}"
-    if title in {"smb null session accepted", "smb share enumeration"}:
+    if title in {
+        "smb null session accepted", "smb share enumeration",
+        "smb null session and share enumeration",
+    }:
         return "smb-anonymous-enumeration"
     if title == "smb signing not required":
         return "smb-signing-not-required"
@@ -100,7 +103,7 @@ def _semantic_issue(
         return "smb-anonymous-enumeration"
     if title == "smbv1 enabled":
         return "smbv1-enabled"
-    if (
+    if title == "web content discovery results" or (
         title == "content fuzzer discovered additional paths"
         or title == "javascript endpoints discovered"
         or title.startswith("sensitive file/path discovered:")
@@ -119,7 +122,7 @@ def _semantic_issue(
         "apache server detected", "apache detection",
     }:
         return "http-component-version-disclosure" if "http server version disclosure" in titles else "http-component-fingerprint"
-    if title == "http server version disclosure":
+    if title in {"http server version disclosure", "http component version disclosure"}:
         return "http-component-version-disclosure"
     if title in {"http framework version disclosure", "php detect"}:
         return "http-component-version-disclosure"
@@ -164,7 +167,7 @@ def _semantic_issue(
         return "mail-version-disclosure"
     if title == "ftp cleartext service exposed":
         return "cleartext-protocol-exposure"
-    if title.startswith("cleartext protocol exposed"):
+    if title.startswith("cleartext protocol exposed") or title == "cleartext protocol services exposed":
         return "cleartext-protocol-exposure"
     if title in {"ssh version disclosure", "legacy ssh service"}:
         return "ssh-legacy-version"

@@ -186,6 +186,37 @@ def test_dedupe_rolls_up_host_level_cleartext_web_and_http_component_families():
     assert by_title["HTTP Component Version Disclosure"].affected_ports == [80, 8180]
 
 
+def test_dedupe_is_idempotent_and_does_not_mix_phpinfo_with_web_rollup():
+    findings = [
+        Finding(
+            title="Exposed phpinfo Page", severity=Severity.HIGH,
+            asset="h", port=80, confidence=Confidence.CONFIRMED,
+            evidence=[Evidence("phpinfo", "phpinfo signature", 5)],
+        ),
+        Finding(
+            title="Sensitive File/Path Discovered: Test Directory",
+            severity=Severity.INFO, asset="h", port=80,
+            confidence=Confidence.CONFIRMED,
+            evidence=[Evidence("content", "test directory", 3)],
+        ),
+        Finding(
+            title="Content Fuzzer Discovered Additional Paths",
+            severity=Severity.INFO, asset="h", port=8180,
+            confidence=Confidence.CONFIRMED,
+            evidence=[Evidence("fuzzer", "admin directory", 3)],
+        ),
+    ]
+
+    once = dedupe_findings(findings)
+    twice = dedupe_findings(once)
+
+    assert len(twice) == 2
+    phpinfo = next(finding for finding in twice if finding.title == "Exposed phpinfo Page")
+    web = next(finding for finding in twice if finding.title == "Web Content Discovery Results")
+    assert [item.source for item in phpinfo.evidence] == ["phpinfo"]
+    assert {item.source for item in web.evidence} == {"content", "fuzzer"}
+
+
 def test_dedupe_merges_exposure_paths_into_protocol_issue():
     generic = Finding(
         title="Exposed TELNET Service Needs Owner Validation",
