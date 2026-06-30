@@ -26,6 +26,8 @@ SMB session metadata, clean DNS TXT evidence, and NFS identity normalization
 close the remaining Metasploitable2 evidence gaps.
 Host-level semantic roll-ups keep multi-service observations readable without
 discarding per-port evidence.
+Final report polish removes repeated/internal evidence labels and guarantees
+complete per-port proof in consolidated cleartext findings.
 
 ## Hardening Phases L-P
 

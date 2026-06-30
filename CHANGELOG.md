@@ -1,5 +1,14 @@
 # Changelog
 
+## Metasploitable2 final report polish
+
+- Client-facing evidence is de-duplicated by source and description, and
+  repeated Impacket SMB metadata is rendered once per finding.
+- Internal evidence-strength fractions remain in JSON but are removed from the
+  client HTML/PDF.
+- The consolidated cleartext finding renders one protocol-specific evidence
+  line for every affected port and omits generic exposure noise.
+
 ## Metasploitable2 report hardening
 
 - Finding consolidation now merges selected identical issue families across
