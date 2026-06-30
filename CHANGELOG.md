@@ -3,7 +3,8 @@
 ## Metasploitable2 final report polish
 
 - Client-facing evidence is de-duplicated by source and description, and
-  repeated Impacket SMB metadata is rendered once per finding.
+  repeated Impacket SMB metadata, including equivalent prose and structured
+  forms, is rendered once per finding.
 - Internal evidence-strength fractions remain in JSON but are removed from the
   client HTML/PDF.
 - The consolidated cleartext finding renders one protocol-specific evidence
